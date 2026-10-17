@@ -1,0 +1,8 @@
+{
+  "best_idx": 2,
+  "scores": [
+    { "idx": 0, "lighting": 5, "composition": 4, "reason": "subject in shadow" },
+    { "idx": 1, "lighting": 6, "composition": 7, "reason": "clean background, slightly high" },
+    { "idx": 2, "lighting": 8, "composition": 8, "reason": "even light, subject centered" }
+  ]
+}

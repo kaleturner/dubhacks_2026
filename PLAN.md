@@ -1,5 +1,7 @@
 # Robotic Cinematic Ad Recorder: Team Plan (DubHacks '26 · Perceptron Robotics Track)
 
+Workshop corrections (Isaac vs Mk1.5, joint names, the robotics API) are in [WORKSHOP.md](WORKSHOP.md). Where this plan and that file disagree, follow WORKSHOP.md.
+
 ## 1. What we're building
 A user says *"Record a 15 second video of this apple."* The phone, held in the SO-101's gripper, runs our web app. A laptop orchestrator:
 1. Uses Perceptron Mk1.5 to parse the request and locate the object.
@@ -45,7 +47,7 @@ Once these are agreed, all 4 people can build against mocks and merge later with
 ```python
 class Arm:
     def connect(self) -> None
-    def get_state(self) -> list[float]          # 6 values: pan, lift, elbow, wrist_flex, wrist_roll (deg), gripper (0-100)
+    def get_state(self) -> list[float]          # shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll (deg), gripper (0-100)
     def move_to(self, pose: str | list[float], duration_s: float) -> None   # blocking, eased, clamped
     def run_scripted(self, move: str, duration_s: float) -> None           # "push_in" | "hero_rise" | "orbit_scripted"
     def run_vla(self, instruction: str, duration_s: float) -> None         # Isaac orbit via Robotics API

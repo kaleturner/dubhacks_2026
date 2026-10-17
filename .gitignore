@@ -1,0 +1,21 @@
+.env
+team.key
+control.headers
+inference.headers
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.Python
+.DS_Store
+*.log
+
+node_modules/
+web/dist/
+web/.vite/
+
+server/media/*
+!server/media/.gitkeep
+
+# Local demo captures stay off the repo. Upload them through the ML pipeline.
+ml/demos/

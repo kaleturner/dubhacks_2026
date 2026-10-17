@@ -1,0 +1,91 @@
+:root {
+  color: #f4f1ea;
+  background: #11130f;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+main {
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+}
+
+h1 {
+  font-size: 2rem;
+  line-height: 1.1;
+  margin: 0 0 1rem;
+}
+
+.eyebrow {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  color: #c6b48a;
+}
+
+textarea {
+  width: 100%;
+  border: 0;
+  border-radius: 1rem;
+  padding: 1rem;
+  font: inherit;
+  background: #1d2118;
+  color: inherit;
+}
+
+.row {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+button, .button {
+  flex: 1;
+  border: 0;
+  border-radius: 999px;
+  padding: 1rem 1.25rem;
+  font: inherit;
+  font-weight: 650;
+  text-align: center;
+  text-decoration: none;
+  background: #e7d7a8;
+  color: #1a160d;
+}
+
+button.ghost, .button.ghost {
+  background: transparent;
+  color: #f4f1ea;
+  border: 1px solid #3c4036;
+}
+
+button:disabled { opacity: 0.4; }
+
+.hint { color: #c8c2b4; }
+
+.steps {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+}
+
+.steps li {
+  padding: 0.7rem 0;
+  border-bottom: 1px solid #2a2e26;
+  color: #8d887c;
+}
+
+.steps li.on { color: #f4f1ea; font-weight: 700; }
+.steps li.done { color: #c6b48a; }
+
+video {
+  width: 100%;
+  border-radius: 1rem;
+  background: #000;
+}

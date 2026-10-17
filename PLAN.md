@@ -1,15 +1,17 @@
 # Robotic Cinematic Ad Recorder: Team Plan (DubHacks '26 · Perceptron Robotics Track)
 
+> **Pivot (Sat afternoon): the phone does not go in the gripper.** The gripper can't hold a phone safely, and the phone would block the wrist camera. The **wrist camera films**, the **C920 is the side camera**, and the phone is only the remote (prompt in, status and clip out). Sections below are updated; `CONTRACTS.md` is the source of truth.
+
 Workshop corrections (Isaac vs Mk1.5, joint names, the robotics API) are in [WORKSHOP.md](WORKSHOP.md). Where this plan and that file disagree, follow WORKSHOP.md.
 
 ## 1. What we're building
-A user says *"Record a 15 second video of this apple."* The phone, held in the SO-101's gripper, runs our web app. A laptop orchestrator:
-1. Uses Perceptron Mk1.5 to parse the request and locate the object.
-2. Moves the arm through a few scout angles, where the phone snaps a still at each, and has Mk1.5 pick the angle with the best light and composition.
-3. Performs a cinematic move while the phone records: the orbit is a fine-tuned Isaac VLA; the push-in and hero rise are scripted.
+A user says *"Record a 15 second video of this apple"* into our web app on their phone. A laptop orchestrator:
+1. Uses Perceptron Mk1.5 to parse the request and locate the object in the side (C920) frame.
+2. Moves the arm through a few scout angles, grabs a wrist-camera still at each, and has Mk1.5 pick the angle with the best light and composition.
+3. Performs a cinematic move while the wrist camera records: the orbit is a fine-tuned Isaac VLA; the push-in and hero rise are scripted.
 4. Trims the clip to exactly N seconds (≤30 s processing) and sends it back to the phone.
 
-**Decisions we've made:** phone held in the gripper (with pads) · hybrid motion · lighting chosen by angle, no lamps · single take auto-trimmed · PWA web app · voice input with text fallback · the VLA uses the provided USB side and wrist cameras, so the phone only records.
+**Decisions we've made:** wrist camera films, gripper empty · hybrid motion · lighting chosen by angle, no lamps · single take auto-trimmed · PWA web app as the remote · voice input with text fallback · the laptop opens both USB cameras once and shares them between Isaac, scouting and recording.
 
 **Hard facts:**
 - Workshop at 12:30–1:15 (required). Devpost draft due **10:30 PM Sat**. Final with demo video due **10:00 AM Sun**. Public repo, with at least 70% of the code written here.
@@ -37,11 +39,9 @@ Once these are agreed, all 4 people can build against mocks and merge later with
 |---|---|
 | phone→server | `{"type":"prompt","text":"record a 15 second video of this apple"}` |
 | server→phone | `{"type":"status","stage":"PARSE"\|"LOCATE"\|"SCOUT"\|"PLAN"\|"RECORD"\|"POST"\|"DONE"\|"ERROR","detail":"..."}` |
-| server→phone | `{"type":"capture_still","job_id":"j1","pose_id":3}` → phone POSTs the still |
-| server→phone | `{"type":"start_recording","job_id":"j1"}` / `{"type":"stop_recording","job_id":"j1"}` → phone POSTs the video |
 | server→phone | `{"type":"result","job_id":"j1","url":"/media/j1_final.mp4","duration_s":15}` |
 
-**REST:** `POST /upload/still?job_id=&pose_id=` (jpeg) · `POST /upload/video?job_id=` (mp4/webm) · `GET /media/{file}` · `POST /transcribe` (audio blob → `{"text":...}`, fallback only).
+**REST:** `GET /media/{file}` · `POST /transcribe` (audio blob → `{"text":...}`, fallback only). Stills and video come from `robot/cameras.py`, not the phone.
 
 ### 2c. Robot interface (Python, `robot/arm.py`), used by the backend
 ```python
@@ -67,7 +67,7 @@ Ship a `mock_perception.py` that returns hard-coded examples of each shape.
 
 ### 2e. Agree today
 - The VLA task prompt, verbatim: `"orbit the camera around the object"`.
-- The constant gripper value for holding the phone (measure it after calibration).
+- The constant gripper value (`GRIPPER_HOLD`) that keeps the jaws out of the wrist shot.
 - The tunnel tool (cloudflared or ngrok) and who owns the `PUBLIC_URL`.
 
 ---
@@ -77,10 +77,10 @@ Ship a `mock_perception.py` that returns hard-coded examples of each shape.
 ### 🤖 Robotics (owns the arm and all arm time)
 **Start now:**
 1. Attend the workshop. Find the ports and calibrate the leader and follower with LeRobot; save the calibration file.
-2. Mount the provided wrist and side USB cameras. Fit the phone in the gripper with foam or rubber pads, find the stable grip value, and test slow moves for slippage.
-3. **Top priority: record 50–60 orbit demos** with ML/Video, using the agreed prompt. Use 5–6 apple positions × 10 demos, slow, always orbiting the same direction, with the phone in the gripper.
+2. Mount the C920 as the fixed side camera (tape or clamp it; it never moves after this). Check the wrist camera's framing and pick `GRIPPER_HOLD` so the jaws stay out of the shot. Write `SIDE_CAM_INDEX` / `WRIST_CAM_INDEX` into `.env` and run `python -m robot.cameras --real`.
+3. **Top priority: record 50–60 orbit demos** with ML/Video, using the agreed prompt. Use 5–6 apple positions × 10 demos, slow and smooth, always orbiting the same direction, gripper at `GRIPPER_HOLD`, with the apple centered in the wrist frame. These demos are the footage style the policy will reproduce.
 4. Write `robot/arm.py` plus `MockArm`. Build a pose library (`poses.py`) by moving the arm by hand and saving joint values: home, scout_0..4, push_in start/end, hero top. Implement `move_to` with 30 Hz smoothstep interpolation and joint clamps.
-5. `vla_client.py`: Robotics API session grant → create session → predict loop (side + wrist frames, state) → execute 30-action chunks with RTC → override the gripper to the hold value → stop at `duration_s` → delete the session. First test on the 1k-step checkpoint.
+5. `vla_client.py`: Robotics API session grant → create session → predict loop (side + wrist frames from `robot.cameras`, state) → execute 30-action chunks with RTC → override the gripper to the hold value → stop at `duration_s` → delete the session. First test on the 1k-step checkpoint.
 
 **Mocks:** none needed. **Handoff:** the real `Arm` class to Backend by about 9 PM.
 
@@ -90,7 +90,7 @@ Ship a `mock_perception.py` that returns hard-coded examples of each shape.
 2. Write `ml/perception.py` with JSON-schema structured outputs for `parse_intent`, `locate` and `score_angles`. Tune the prompts on 5–10 sample apple photos taken from different angles and lighting. Ship `mock_perception.py` first.
 3. Write the dataset pipeline script `ml/upload_and_train.py`: register the dataset → reserve uploads → PUT the files → finalize → poll validation → `POST /v1/jobs` (standard, expert_only, horizon 30, RTC on). Accept steps as an argument and log job status and metrics.
 4. Help Robotics record demos (operate the leader arm or reset the object), then run 1k steps. If the result looks sane, **start the 10k run by about 6–7 PM**.
-5. `best_window` (optional) plus the ffmpeg trim helper `ml/trim.py` (stream copy, fade in/out, exact `duration_s`).
+5. `best_window` (optional) plus the ffmpeg trim helper `ml/trim.py` (re-encode the wrist mp4v to H.264, fade in/out, exact `duration_s`).
 6. Own the final demo video for Devpost on Sunday morning.
 
 **Mocks:** none. **Handoff:** `perception.py` to Backend by about 5 PM; deployment ID by Sunday morning.
@@ -98,9 +98,9 @@ Ship a `mock_perception.py` that returns hard-coded examples of each shape.
 ### 🖥️ Backend (owns the orchestrator and the integration)
 **Start now (all mocked):**
 1. FastAPI skeleton: the `/ws` hub, the upload endpoints, `/media` static files, `.env` loading.
-2. `server/orchestrator.py` state machine: PARSE → LOCATE (side-cam frame) → SCOUT (for each pose: `arm.move_to` → `capture_still` → wait for the upload) → PLAN (`score_angles` → pick the move) → RECORD (`start_recording` → run the move → `stop_recording`) → POST (trim) → DONE. Push a `status` message at every stage, with timeouts and an `ERROR` path.
-3. Run everything against `MockArm` + `mock_perception` plus a tiny fake phone client (a Python WS script) so the whole loop works before anyone else is done.
-4. Set up the HTTPS tunnel and publish the `PUBLIC_URL` to the team. Normalize phone video (webm/mov → mp4) with ffmpeg.
+2. `server/orchestrator.py` state machine: PARSE → LOCATE (side-cam still) → SCOUT (for each pose: `arm.move_to` → `wrist.save_still`) → PLAN (`score_angles` → pick the move) → RECORD (`wrist.start_recording` → run the move → `wrist.stop_recording`) → POST (trim) → DONE. Push a `status` message at every stage, with timeouts and an `ERROR` path.
+3. Run everything against `MockArm` + `MockCamera` + `mock_perception` plus a tiny fake phone client (a Python WS script) so the whole loop works before anyone else is done.
+4. Set up the HTTPS tunnel and publish the `PUBLIC_URL` to the team.
 5. Swap in the real `perception.py` (about 5 PM) and the real `Arm` (about 9 PM).
 
 **Mocks:** MockArm, mock_perception, fake phone client. **Integration owner:** runs every merge checkpoint.
@@ -108,10 +108,10 @@ Ship a `mock_perception.py` that returns hard-coded examples of each shape.
 ### 📱 Frontend (owns the phone PWA)
 **Start now (works against a local mock WS server):**
 1. Vite + React app, mobile-first and big-button UI. Screens: **Prompt** (mic plus text box) → **Live status** (stage stepper) → **Result** (video player with a download/share button).
-2. Camera: `getUserMedia` with the rear camera at 1080p/30, `MediaRecorder` recording (mp4 on iOS, webm on Android), canvas snapshot for stills, Wake Lock to keep the screen on, and exposure/focus lock where supported.
+2. ~~Phone camera~~ dropped in the pivot. Nice-to-have instead: show the scout stills and the chosen angle on the status screen (serve them from `/media`).
 3. Voice: `webkitSpeechRecognition`. When it's missing, fall back to recording audio and calling `POST /transcribe`.
 4. WS client implementing every message in §2b. Write a 30-line `mock_server.js` that replays a scripted job so you can develop alone.
-5. **Test on the actual team phones early.** iOS Safari's HTTPS and MediaRecorder quirks are the main risk.
+5. **Test on the actual team phones early.** iOS Safari over the HTTPS tunnel and mic permissions are the main risk.
 6. Own the Devpost draft text and screenshots by **10:30 PM**.
 
 **Mocks:** mock WS server. **Handoff:** the PWA served from the tunnel URL by about 7 PM.
@@ -123,18 +123,18 @@ Ship a `mock_perception.py` that returns hard-coded examples of each shape.
 |---|---|---|
 | ~1:45 PM | Contracts frozen, repo skeleton pushed | Everyone pulls; mocks exist |
 | ~6:00 PM | **Demos uploaded**; real perception in the backend | Dataset validation passes; backend + mock arm + real Mk1.5 work on stills |
-| ~7:30 PM | **Phone ↔ backend** | Real phone: prompt → status updates → mock-arm "recording" → trimmed clip returned |
+| ~7:30 PM | **Phone ↔ backend** | Real phone: prompt → status updates → mock-arm + MockCamera recording → trimmed clip plays on the phone |
 | ~9:30 PM | **Real arm, scripted moves** | Full end-to-end: "Record a 10 second video of this apple" → scout → push-in → 10 s clip in ≤30 s |
 | 10:30 PM | Devpost draft submitted | ✓ |
 | Overnight | VLA orbit on the 1k checkpoint, then swap to 10k | Orbit works at 3 untried apple positions. If not, use `orbit_scripted` as the fallback |
 | Sun 9 AM | Demo video recorded, repo public | Final Devpost submitted by 10 AM |
 
 ## 5. Risks and fallbacks
-- **The phone slips or overloads the wrist:** pads, landscape grip, poses close to the base, slow moves, clamps.
+- **Wrist camera footage looks low-res (640×480):** light the table well, keep moves slow, and sell it as "the robot's own eye". The judges' video is filmed separately on a phone on a tripod.
 - **The VLA orbit is unreliable:** use `orbit_scripted`; the demo still shows Mk1.5 shot planning.
 - **Arm contention:** only Robotics and ML need the arm; everyone else works on mocks.
 - **Venue WiFi:** keep a phone hotspot as backup; keep clips at 1080p and short.
-- **iOS recording quirks:** the backend normalizes with ffmpeg; test on day 1.
+- **Webcam contention:** only the server process opens the cameras. Close Rerun / `lerobot-teleoperate` before starting the server.
 
 ## 6. Verification (end-to-end)
 1. Unit: each `perception.py` function returns schema-valid JSON on sample photos; `Arm.move_to` reaches every named pose; `vla_client` gets a 30×6 chunk back from `/predict`.

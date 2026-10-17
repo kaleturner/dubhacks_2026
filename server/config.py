@@ -14,4 +14,7 @@ ROBOTICS_TEAM_KEY = os.getenv("ROBOTICS_TEAM_KEY", "")
 DEPLOYMENT_ID = os.getenv("DEPLOYMENT_ID", "")
 ARM_PORT = os.getenv("ARM_PORT", "")
 PUBLIC_URL = os.getenv("PUBLIC_URL", "")
+# From `lerobot-find-cameras opencv`. They change after a replug.
+SIDE_CAM_INDEX = int(os.getenv("SIDE_CAM_INDEX", "0"))
+WRIST_CAM_INDEX = int(os.getenv("WRIST_CAM_INDEX", "1"))
 USE_MOCKS = os.getenv("USE_MOCKS", "1") == "1"

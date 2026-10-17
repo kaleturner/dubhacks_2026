@@ -1,5 +1,8 @@
 """Register orbit demos and start an Isaac 0.5 fine-tune.
 
+Demos are recorded with nothing in the gripper, at GRIPPER_HOLD, with the
+wrist camera kept on the apple the whole orbit. That shot is the product.
+
 Prefer a public Hugging Face repo. Direct upload is reserve → PUT signed
 URLs (no team key) → finalize, then poll until the dataset state is ready.
 Train only on ready.

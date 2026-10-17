@@ -1,8 +1,6 @@
 """FastAPI orchestrator.
 
   WS   /ws
-  POST /upload/still?job_id=&pose_id=     jpeg
-  POST /upload/video?job_id=              mp4 or webm
   GET  /media/{file}
   POST /transcribe                        audio → {"text": "..."}
 
@@ -39,23 +37,6 @@ app.add_middleware(
 @app.get("/health")
 def health() -> dict:
     return {"ok": True, "use_mocks": USE_MOCKS}
-
-
-@app.post("/upload/still")
-async def upload_still(job_id: str, pose_id: int, file: UploadFile = File(...)) -> dict:
-    dest = MEDIA_DIR / f"{job_id}_pose_{pose_id}.jpg"
-    dest.write_bytes(await file.read())
-    return {"ok": True, "path": f"/media/{dest.name}"}
-
-
-@app.post("/upload/video")
-async def upload_video(job_id: str, file: UploadFile = File(...)) -> dict:
-    suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in {".mp4", ".webm", ".mov"}:
-        suffix = ".webm"
-    dest = MEDIA_DIR / f"{job_id}_raw{suffix}"
-    dest.write_bytes(await file.read())
-    return {"ok": True, "path": f"/media/{dest.name}"}
 
 
 @app.post("/transcribe")

@@ -18,6 +18,7 @@ JOINT_NAMES = (
     "gripper",
 )
 
-# Robotics fills this in after measuring a stable phone grip. None until then.
-# The VLA loop must override the gripper command to this value.
-PHONE_GRIPPER_HOLD: float | None = None
+# The gripper holds nothing; the wrist camera films. Robotics picks the value
+# that keeps the jaws out of the wrist shot and records every demo with it.
+# The VLA loop overrides the gripper command to this value. None until measured.
+GRIPPER_HOLD: float | None = None

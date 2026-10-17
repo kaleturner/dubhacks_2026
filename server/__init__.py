@@ -1,1 +1,1 @@
-"""FastAPI orchestrator for the phone, the arm, and perception."""
+"""FastAPI orchestrator for the phone remote, the arm, its cameras, and perception."""

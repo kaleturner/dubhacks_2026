@@ -1,1 +1,1 @@
-"""Arm package. Backend imports robot.arm and robot.poses."""
+"""Arm package. Backend imports robot.arm, robot.poses, and robot.cameras."""

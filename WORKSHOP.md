@@ -48,7 +48,7 @@ Cameras, named exactly this, 640×480, 30 fps:
 - `observation.images.side` — fixed, sees the whole task
 - `observation.images.wrist` — on the gripper
 
-The phone in the gripper is our recording camera. It is not an Isaac camera. If a person cannot do the task from the side and wrist frames alone, the policy cannot either.
+The wrist camera is also our filming camera, so the shot we deliver is the shot Isaac sees. The phone is only the remote. The C920 is the side camera. If a person cannot do the task from the side and wrist frames alone, the policy cannot either.
 
 ### Setup
 
@@ -60,7 +60,7 @@ The phone in the gripper is our recording camera. It is not an Isaac camera. If 
 
 - About 50 episodes. About 10 per object position, from 5 or 6 positions.
 - One task string for every episode, and the same string at inference: `orbit the camera around the object`.
-- One way of holding the phone. Slow moves. Cameras stay put. The apple stays in frame.
+- Gripper empty at `GRIPPER_HOLD`. Slow, smooth moves; this footage style is what the policy learns. The C920 stays put. The apple stays in the wrist frame.
 - Start and stop on clean task boundaries.
 - After recording, replay an episode on the follower. If the replay does not match the demo, fix that before training.
 - LeRobot stamps frames as 30 Hz from the frame index. If the laptop only captured at 25 Hz, the dataset still says 30 and the motion is sped up. The validator will not catch it. Watch the cadence line.
@@ -99,7 +99,7 @@ Poll `GET /v1/jobs/{id}` every few seconds. Logs and metrics are paged (`cursor`
 
 `GET /v1/deployments/{id}/contract` with the team key. Save `contract_id`. It pins joint order, units, camera names, horizon 30 at 30 Hz, RTC limits, and image limits. Put `contract_id` on the robot session and every predict. An old id is refused.
 
-You send raw calibrated joints and frames up to 1920×1080. The deployment resizes and normalizes. Actions come back in robot units. Never normalize or rescale on our side. The phone-hold override replaces only `gripper.pos` with `PHONE_GRIPPER_HOLD` after the chunk arrives.
+You send raw calibrated joints and frames up to 1920×1080. The deployment resizes and normalizes. Actions come back in robot units. Never normalize or rescale on our side. The gripper override replaces only `gripper.pos` with `GRIPPER_HOLD` after the chunk arrives.
 
 ### Inference
 
@@ -124,7 +124,7 @@ Control loop, two threads, one clock:
 - 503/504: do not resend the stale frame. Capture a new one and hold.
 - 401 on inference usually means the session credentials expired, or the team key was sent there. Fresh grant, new session id, rewrite the headers, open a new robot session.
 
-Our orbit client lives in `robot/vla_client.py`. It must follow this loop and then overwrite the gripper component with `PHONE_GRIPPER_HOLD`.
+Our orbit client lives in `robot/vla_client.py`. It must follow this loop, read frames from `robot.cameras`, and then overwrite the gripper component with `GRIPPER_HOLD`.
 
 ## Five rules from the deck
 

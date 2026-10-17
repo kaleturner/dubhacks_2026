@@ -1,17 +1,21 @@
 """Orchestrator. Backend fills in each stage.
 
+The wrist camera films. The phone only sends the prompt and shows status and
+the result. Open robot.cameras once at startup (MockCamera while USE_MOCKS=1)
+and share it with the arm; nothing else may open the webcams.
+
 Order, and the call that belongs there:
 
   PARSE   ml.perception.parse_intent(text)
-  LOCATE  grab a side-camera frame, ml.perception.locate(path, obj)
+  LOCATE  side.save_still(...) → ml.perception.locate(path, obj)
   SCOUT   for each pose in robot.poses.SCOUT_POSES:
-            arm.move_to(pose) → send capture_still → wait for POST /upload/still
+            arm.move_to(pose) → wrist.save_still(media/{job}_pose_{i}.jpg)
   PLAN    ml.perception.score_angles(stills, obj) → choose orbit | push_in | hero_rise
-  RECORD  send start_recording → arm.run_vla or arm.run_scripted → send stop_recording
-          → wait for POST /upload/video
-  POST    ml.perception.best_window (optional) + ml.trim.trim_clip
+  RECORD  wrist.start_recording(media/{job}_raw.mp4)
+          → arm.run_vla or arm.run_scripted → wrist.stop_recording()
+  POST    ml.perception.best_window (optional) + ml.trim.trim_clip → {job}_final.mp4
   DONE    send result {job_id, url, duration_s}
-  ERROR   send status ERROR, arm.stop(), and return
+  ERROR   send status ERROR, wrist.stop_recording(), arm.stop(), and return
 """
 
 from collections.abc import Awaitable, Callable

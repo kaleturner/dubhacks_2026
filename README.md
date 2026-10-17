@@ -1,6 +1,6 @@
 # dubhacks_2026
 
-Phone in the SO-101 gripper, laptop calling the shots. Perceptron Mk1.5 parses the request and picks the angle. The arm does a cinematic move. The phone gets back a clip of exactly the length you asked for.
+The SO-101 is the camera operator: its wrist camera films while a laptop calls the shots. Perceptron Mk1.5 parses the request and picks the angle, and the arm does a cinematic move. You ask from your phone and get back a clip of exactly the length you asked for.
 
 DubHacks 2026, Perceptron Robotics track.
 

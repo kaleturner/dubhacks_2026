@@ -6,7 +6,8 @@ Team board for humans and coding agents. Read this, `PLAN.md`, `CONTRACTS.md`, a
 
 - Repo skeleton is in. Workshop notes are in `WORKSHOP.md`. Isaac 0.5 drives the arm. Mk1.5 does perception.
 - Critical path: orbit demos on the arm. Same task sentence every episode. Dataset must reach `ready` before the 1,000-update job. Quota is two successful jobs, so plan the 10k run as the second one.
-- Open decisions: tunnel tool (cloudflared or ngrok), who publishes `PUBLIC_URL`, and the measured phone gripper value.
+- **Pivot: no phone in the gripper.** The wrist camera films (`robot/cameras.py`), the C920 is the side camera, the phone is only the remote. Phone capture messages and upload routes are gone.
+- Open decisions: tunnel tool (cloudflared or ngrok), who publishes `PUBLIC_URL`, the measured `GRIPPER_HOLD`, and the camera indexes.
 - Blockers: none.
 
 ## Tracks
@@ -16,7 +17,7 @@ Team board for humans and coding agents. Read this, `PLAN.md`, `CONTRACTS.md`, a
 | Robotics | `robot/` | `arm.py`, `poses.py`, `vla_client.py` | `web/`, `server/orchestrator.py` |
 | ML / Video | `ml/` | `mock_perception.py` is done; implement `perception.py`, then `upload_and_train.py` | `web/`, `robot/arm.py` |
 | Backend | `server/` | `orchestrator.py` against `MockArm` and `ml.mock_perception` | `robot/` real arm, `ml/perception.py` prompts |
-| Frontend | `web/` | `npm install`, `npm run mock`, `npm run dev`. Camera still goes in `src/camera.js` | `server/`, `robot/`, `ml/` |
+| Frontend | `web/` | `npm install`, `npm run mock`, `npm run dev`. Prompt, status, result only; no phone camera | `server/`, `robot/`, `ml/` |
 
 Work stays in your folder. Integration happens at the checkpoints in `PLAN.md` §4, with Backend running them.
 
@@ -27,7 +28,8 @@ Work stays in your folder. Integration happens at the checkpoints in `PLAN.md` �
 - `USE_MOCKS=1` until the real perception or arm handoff. The server must keep working on mocks if the arm is taken.
 - Arm time is shared with other teams. Do not occupy the arm for frontend or backend work.
 - VLA prompt stays verbatim, in the demos and at inference: `orbit the camera around the object`.
-- Joint order is `shoulder_pan`, `shoulder_lift`, `elbow_flex`, `wrist_flex`, `wrist_roll`, `gripper`. Do not rescale actions. Replace only the gripper with the measured phone hold.
+- Joint order is `shoulder_pan`, `shoulder_lift`, `elbow_flex`, `wrist_flex`, `wrist_roll`, `gripper`. Do not rescale actions. Replace only the gripper with `GRIPPER_HOLD`.
+- Only the server opens the webcams, through `robot/cameras.py`. Close Rerun and `lerobot-teleoperate` first.
 - This is a public repo. At least 70% of the code is written in this event.
 
 ## Run
@@ -36,6 +38,7 @@ From the repo root, after `python -m venv .venv && source .venv/bin/activate` an
 
 ```bash
 python -m robot.arm                  # MockArm smoke test
+python -m robot.cameras              # MockCamera smoke test (--real opens the USB cameras)
 python -m uvicorn server.main:app --reload --port 8000
 python server/fake_phone.py          # prompt in, status messages out
 ```
@@ -72,3 +75,4 @@ Append a row. Newest at the bottom.
 |---|---|---|
 | Sat kickoff | skeleton | Contracts frozen. MockArm, mock perception, FastAPI routes, and the phone mock WS are in. |
 | Sat workshop | notes | Isaac 0.5 is the arm policy. Mk1.5 is perception. Joint names and the predict/RTC loop are in WORKSHOP.md. |
+| Sat afternoon | pivot | Phone out of the gripper. Wrist cam films via `robot/cameras.py`; C920 is side. Removed capture_still/start_recording/stop_recording and /upload routes. `PHONE_GRIPPER_HOLD` → `GRIPPER_HOLD`. |

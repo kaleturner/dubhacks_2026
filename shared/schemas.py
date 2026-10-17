@@ -1,5 +1,7 @@
 """Pydantic models for the phone WebSocket, perception, and arm-facing payloads.
 
+The phone is a remote: prompt in, status and result out. It never films.
+
 Examples live in shared/examples/. If a shape changes, update the model, the
 example JSON, and CONTRACTS.md in the same change.
 """
@@ -21,22 +23,6 @@ class StatusMessage(BaseModel):
     type: Literal["status"]
     stage: Stage
     detail: str
-
-
-class CaptureStillMessage(BaseModel):
-    type: Literal["capture_still"]
-    job_id: str
-    pose_id: int
-
-
-class StartRecordingMessage(BaseModel):
-    type: Literal["start_recording"]
-    job_id: str
-
-
-class StopRecordingMessage(BaseModel):
-    type: Literal["stop_recording"]
-    job_id: str
 
 
 class ResultMessage(BaseModel):

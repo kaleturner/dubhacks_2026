@@ -2,9 +2,11 @@
 
 
 def trim_clip(video_path: str, start_s: float, duration_s: float, out_path: str) -> str:
-    """Stream-copy a clip of exactly duration_s, with a short fade in and out.
+    """Cut a clip of exactly duration_s, with a short fade in and out.
 
-    Return out_path. Normalize webm/mov to mp4 when the input is not already mp4.
+    Input is the wrist camera's mp4v file from robot.cameras (640x480, 30 fps).
+    Re-encode to H.264 + yuv420p + faststart: phones will not play mp4v, and the
+    fades need a re-encode anyway. Return out_path.
     """
     del video_path, start_s, duration_s, out_path
     raise NotImplementedError

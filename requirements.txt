@@ -4,3 +4,5 @@ python-dotenv
 pydantic
 websockets
 python-multipart
+opencv-python
+numpy

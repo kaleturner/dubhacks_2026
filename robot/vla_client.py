@@ -9,11 +9,13 @@ The call sequence is in WORKSHOP.md. Short version:
   loop   POST /v1/inference/sessions/{id}/predict
   reset  between episodes; DELETE when finished
 
-Predict sends raw joints and PNG parts named side and wrist. The first call
+Predict sends raw joints and PNG parts named side and wrist, from
+robot.cameras (Camera.png_bytes). Do not open the webcams here; the wrist
+camera is recording the clip at the same time. The first call
 omits rtc. Later calls send prior_chunk_id, prior_start_index, and delay
 (1–12). Drop any reply that arrives after capture + 400 ms, then hold.
 Actions are already in robot units. Replace only the gripper with
-PHONE_GRIPPER_HOLD. Do not rescale the other joints.
+GRIPPER_HOLD. Do not rescale the other joints.
 """
 
 from shared.constants import VLA_TASK_PROMPT

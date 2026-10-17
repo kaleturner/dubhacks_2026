@@ -23,18 +23,6 @@ export default function App() {
         setDetail(message.detail);
         if (message.stage === "ERROR") setError(message.detail);
       },
-      onCaptureStill(message) {
-        setDetail(`snap pose ${message.pose_id}`);
-        // TODO: grab a still from the rear camera and POST /upload/still.
-      },
-      onStartRecording() {
-        setDetail("recording");
-        // TODO: MediaRecorder start.
-      },
-      onStopRecording() {
-        setDetail("stopping");
-        // TODO: MediaRecorder stop, then POST /upload/video.
-      },
       onResult(message) {
         setResult(message);
         setScreen("result");

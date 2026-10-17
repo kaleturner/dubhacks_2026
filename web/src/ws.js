@@ -11,9 +11,6 @@ export function connectJob(text, handlers) {
   ws.onmessage = (event) => {
     const message = JSON.parse(event.data);
     if (message.type === "status") handlers.onStatus?.(message);
-    if (message.type === "capture_still") handlers.onCaptureStill?.(message);
-    if (message.type === "start_recording") handlers.onStartRecording?.(message);
-    if (message.type === "stop_recording") handlers.onStopRecording?.(message);
     if (message.type === "result") handlers.onResult?.(message);
   };
   return () => ws.close();

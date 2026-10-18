@@ -161,6 +161,7 @@ class Centerer:
         deadband: float = 0.06,
         max_roll_change_deg: float = 25.0,
         max_flex_from_calib_deg: float = 20.0,
+        target: tuple[float, float] = (0.5, 0.5),
     ) -> None:
         calib = json.loads(CALIBRATION.read_text())
         # Columns: image motion (fraction of frame) per degree of pan, per degree of flex.
@@ -177,6 +178,7 @@ class Centerer:
         self.deadband = deadband
         self.max_roll_change = max_roll_change_deg
         self.max_flex_from_calib = max_flex_from_calib_deg
+        self.target = np.asarray(target, dtype=float)  # where in the frame the object should sit
         self.offset = np.zeros(2)  # pan, flex
         self._roll0: float | None = None
         self.seen = 0
@@ -195,7 +197,7 @@ class Centerer:
         if seen is not None:
             self.seen += 1
             if not rolled and not off_calib:
-                error = np.array([seen[0] - 0.5, seen[1] - 0.5])
+                error = np.array([seen[0], seen[1]]) - self.target
                 if np.abs(error).max() > self.deadband:
                     step = -self.gain * (self.inverse @ error)
                     step = np.clip(step, -self.max_step, self.max_step)

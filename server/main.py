@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from pydantic import ValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -38,6 +39,7 @@ from server.config import (
 from server.dashboard import message_log, remember
 from server.dashboard import router as dashboard_router
 from server.orchestrator import JobGate, Orchestrator
+from shared.schemas import PromptMessage
 
 log = logging.getLogger(__name__)
 
@@ -151,10 +153,12 @@ async def ws(websocket: WebSocket) -> None:
     try:
         while True:
             message = await websocket.receive_json()
-            if message.get("type") != "prompt":
+            try:
+                prompt = PromptMessage.model_validate(message)
+            except ValidationError:
                 await orchestrator.status("ERROR", "expected a prompt message")
                 continue
-            await orchestrator.run(str(message.get("text", "")))
+            await orchestrator.run(prompt.text)
     except WebSocketDisconnect:
         return
 

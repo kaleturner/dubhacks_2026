@@ -1,5 +1,14 @@
+All three beds are CC0 1.0 Universal. Public domain. No attribution required.
+They are bundled so the edit can lay an openly licensed electronic track under the clip.
+
 City Loop by wipics
 https://opengameart.org/content/city-loop-0
+Soft electronic loop. The default when a prompt names no mood.
 
-CC0 1.0 Universal. Public domain. No attribution required.
-Bundled so the edit has an openly licensed electronic track.
+Trance City by MintoDog
+https://opengameart.org/content/trance-city
+130 BPM trance. Used for bright, upbeat, and ad prompts.
+
+Trance Battle by MintoDog
+https://opengameart.org/content/trance-battle
+140 BPM trance. Used for fast, hype, and action prompts.

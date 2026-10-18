@@ -5,7 +5,7 @@ Team board for humans and coding agents. Read this, `PLAN.md`, `CONTRACTS.md`, a
 ## Now
 
 - Repo skeleton is in. Workshop notes are in `WORKSHOP.md`. Isaac 0.5 drives the arm. Mk1.5 does perception.
-- Critical path: zoom demos on the arm (phase 1 is zoom in+out only; `pan_out` and `overhead` come later). Same task sentence every episode: `zoom the camera in then out on the object`. Dataset must reach `ready` before the 1,000-update job. Quota is two successful jobs, so plan the 10k run as the second one.
+- Critical path: zoom demos on the arm (phase 1 is zoom in+out only; `pan_out` and `overhead` come later). Same task sentence every episode: `push in toward the object and pull back`. Dataset must reach `ready` before the 1,000-update job. Quota is two successful jobs, so plan the 10k run as the second one.
 - **Pivot: no phone in the gripper.** The wrist camera films (`robot/cameras.py`), the C920 is the side camera, the phone is only the remote. Phone capture messages and upload routes are gone.
 - Backend orchestrator runs PARSE → DONE on MockArm and MockCamera when perception is mocked. `ml.trim.trim_clip` writes an H.264 `{job}_final.mp4`. Status messages may include `stills` and `best_idx`.
 - Real Mk1.5 is on for this checkout: `USE_MOCK_PERCEPTION=0`, arm and cameras still mocked. `parse_intent`, `locate`, and `score_angles` are tuned on nine circuit-board photos. A grey mock frame returns “not in frame.” `best_window` still falls back to `start_s=0.5`.
@@ -31,7 +31,7 @@ Work stays in your folder. Integration happens at the checkpoints in `PLAN.md` �
 - The robotics team key stays in `team.key`. Never commit it, put it in a command, or paste it into an agent chat. Inference uses the session tokens, not that key.
 - `USE_MOCKS=1` until the real perception or arm handoff. The server must keep working on mocks if the arm is taken.
 - Arm time is shared with other teams. Do not occupy the arm for frontend or backend work.
-- Each task's VLA sentence in `shared/constants.py` `SHOTS` stays verbatim, in the demos and at inference. Phase 1 is `zoom the camera in then out on the object`. Enable a task only after its demos are trained.
+- Each task's VLA sentence in `shared/constants.py` `SHOTS` stays verbatim, in the demos and at inference. Phase 1 is `push in toward the object and pull back`. Enable a task only after its demos are trained.
 - Joint order is `shoulder_pan`, `shoulder_lift`, `elbow_flex`, `wrist_flex`, `wrist_roll`, `gripper`. Do not rescale actions. Replace only the gripper with `GRIPPER_HOLD`.
 - Only the server opens the webcams, through `robot/cameras.py`. Close Rerun and `lerobot-teleoperate` first.
 - This is a public repo. At least 70% of the code is written in this event.
@@ -86,3 +86,4 @@ Append a row. Newest at the bottom.
 | Sat 6:15 PM | backend | Real Mk1.5 parses, locates, and scores. Boxes convert from the 0–1000 grid to pixels. Tuned on nine circuit-board photos. A mock-arm job parses the prompt and rejects the grey side frame. |
 | Sat 6:40 PM | backend | STATUS.md records the mock loop, the phone on one origin, and real Mk1.5 with the arm still mocked. |
 | Sat evening | backend | Orchestrator plans shots. `parse_intent` now returns `{object, style, shots, note}`; `move` and top-level `duration_s` are gone, and the result gains optional `shots`. Tasks live in `SHOTS`; only `zoom` is enabled. Each shot films and trims in turn, then `concat_clips` joins them. Orbit and push-in/hero-rise are retired. CONTRACTS, schemas, examples, and `tests/` updated together. Robotics: capture `zoom_start` and `zoom_in` poses. ML: demos use the zoom sentence. |
+| Sat night | ml | Zoom sentence is now the dataset's `push in toward the object and pull back` (registry, CONTRACTS, WORKSHOP). `ml/check_dataset.py` preflights a LeRobot folder. `ml/upload_and_train.py` has check, upload, train, deployments. The 22-episode `duck-shots-pushin-v1` passes preflight, but the gripper action is about 41 in episodes 0–7 and about 97 in 8–21, not a fixed 85. `GRIPPER_HOLD` is set to 97.1 (episodes 8–21); the 41 group is the odd one out. Not yet run against the live API: needs `team.key`. |

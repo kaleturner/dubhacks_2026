@@ -19,7 +19,7 @@ A prompt can run PARSE → DONE on MockArm and MockCamera, planned as a list of 
 
 ## Still open
 
-- ~6 PM, remaining: the zoom demos and [ml/upload_and_train.py](ml/upload_and_train.py), until the dataset is `ready`. The 1k training job comes after `ready`. Real perception on stills is in.
+- ~6 PM, remaining: run [ml/upload_and_train.py](ml/upload_and_train.py) on `duck-shots-pushin-v1` (22 episodes, preflight passes) until the dataset is `ready`. It needs `team.key`. Gripper action is mixed (about 41 and about 97), so `GRIPPER_HOLD` is 97.1 (the 14-episode majority). The 1k training job comes after `ready`. Real perception on stills is in.
 - ~7:30 PM: a real phone on the tunnel, from prompt to a trimmed clip, with the arm and cameras still mocked.
 - ~9:30 PM: the real `Arm`, a measured `GRIPPER_HOLD`, calibrated poses, and a scripted push-in.
 - 10:30 PM: the Devpost draft. Speech-to-text stays empty until a Grok Voice fill-in.

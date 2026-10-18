@@ -9,7 +9,7 @@
 SHOTS: dict[str, dict] = {
     "zoom": {
         "enabled": True,
-        "vla_prompt": "zoom the camera in then out on the object",
+        "vla_prompt": "push in toward the object and pull back",
         "scripted": "zoom",
         "start_pose": "zoom_start",
         "order": 2,
@@ -66,4 +66,4 @@ JOINT_NAMES = (
 # The gripper holds nothing; the wrist camera films. Robotics picks the value
 # that keeps the jaws out of the wrist shot and records every demo with it.
 # The VLA loop overrides the gripper command to this value. None until measured.
-GRIPPER_HOLD: float | None = None
+GRIPPER_HOLD: float | None = 97.1  # duck-shots-pushin-v1: episodes 8-21 (14 of 22). Episodes 0-7 used ~41.

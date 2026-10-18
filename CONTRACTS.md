@@ -82,7 +82,7 @@ def best_window(video_path: str, duration_s: float) -> dict
 
 ## Agreed constants
 
-- Tasks live in `SHOTS` in `shared/constants.py`. Each has one VLA sentence, verbatim, the same on every demonstration of that task and at inference. Phase 1 trains and runs `zoom` alone: `"zoom the camera in then out on the object"`. `pan_out` and `overhead` are defined but `enabled: False` until their demos are recorded and trained (`shared/constants.py`).
+- Tasks live in `SHOTS` in `shared/constants.py`. Each has one VLA sentence, verbatim, the same on every demonstration of that task and at inference. Phase 1 trains and runs `zoom` alone: `"push in toward the object and pull back"`. `pan_out` and `overhead` are defined but `enabled: False` until their demos are recorded and trained (`shared/constants.py`).
 - Gripper hold: the gripper holds nothing. Robotics picks the value that keeps the jaws out of the wrist shot, records every demo with it, and writes it into `GRIPPER_HOLD`. After a chunk comes back in robot units, the client replaces only the gripper component with that value.
 - Joint names and the Isaac call sequence are in [WORKSHOP.md](WORKSHOP.md).
 - The team key lives in `team.key` (mode 600), never in git, commands, or chat. `.env` holds the other names from `.env.example`.

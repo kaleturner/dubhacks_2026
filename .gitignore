@@ -20,3 +20,4 @@ server/media/*
 # Local demo captures stay off the repo. Upload them through the ML pipeline.
 ml/demos/
 ml/samples/
+ml/.train_state.json

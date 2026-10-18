@@ -1,2 +1,4 @@
 -r ../requirements.txt
 perceptron>=0.4.0
+pyarrow
+requests

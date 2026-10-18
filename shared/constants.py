@@ -7,6 +7,9 @@
 #   start_pose  robot.poses.POSES key the arm moves to before the shot
 #   order       position in a multi-shot story (establishing first, hero last)
 #   min_s       demos run ~15 s; 10 s keeps a replay at most 1.5x recorded speed
+#   center      steer the replay to keep the object centered (robot/centering.py). Off for
+#               sweep: its own fast pan into the top-down view wound the loop up and tilted
+#               the camera off the table for the whole roll; picking the take aims it instead
 SHOTS: dict[str, dict] = {
     "zoom": {
         "enabled": True,
@@ -37,6 +40,7 @@ SHOTS: dict[str, dict] = {
     },
     "sweep": {
         "enabled": True,
+        "center": False,
         "vla_prompt": "spin the camera above the object",
         "scripted": "sweep",
         "start_pose": "sweep_start",

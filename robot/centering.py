@@ -160,10 +160,15 @@ class Centerer:
         max_offset_deg: float = 25.0,
         deadband: float = 0.06,
         max_roll_change_deg: float = 25.0,
+        max_flex_from_calib_deg: float = 20.0,
     ) -> None:
         calib = json.loads(CALIBRATION.read_text())
         # Columns: image motion (fraction of frame) per degree of pan, per degree of flex.
         self.jacobian = np.array(calib["jacobian"], dtype=float)
+        # Measured with the camera looking forward and down. Looking straight down (overhead,
+        # sweep) the same joint moves shift the image differently and the loop ran away to
+        # its limits, so it only corrects near the calibration's wrist flex.
+        self.calib_flex = float(calib["pose"][FLEX])
         self.inverse = np.linalg.pinv(self.jacobian)
         self.tracker = tracker
         self.gain = gain
@@ -171,6 +176,7 @@ class Centerer:
         self.max_offset = max_offset_deg
         self.deadband = deadband
         self.max_roll_change = max_roll_change_deg
+        self.max_flex_from_calib = max_flex_from_calib_deg
         self.offset = np.zeros(2)  # pan, flex
         self._roll0: float | None = None
         self.seen = 0
@@ -185,9 +191,10 @@ class Centerer:
         # The Jacobian was measured at one wrist roll. While a sweep rolls the camera,
         # image left/right no longer maps to pan, so the offsets are frozen.
         rolled = abs(float(row[ROLL]) - self._roll0) > self.max_roll_change
+        off_calib = abs(float(row[FLEX]) - self.calib_flex) > self.max_flex_from_calib
         if seen is not None:
             self.seen += 1
-            if not rolled:
+            if not rolled and not off_calib:
                 error = np.array([seen[0] - 0.5, seen[1] - 0.5])
                 if np.abs(error).max() > self.deadband:
                     step = -self.gain * (self.inverse @ error)

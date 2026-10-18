@@ -6,6 +6,10 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+# Light stabilization, then a gentle grade: the wrist cam is flat and a little soft.
+LOOK = "deshake=rx=32:ry=32:edge=clamp,eq=contrast=1.08:saturation=1.3:gamma=1.03,unsharp=5:5:0.5"
+CROSSFADE_S = 0.4
+
 
 def trim_clip(video_path: str, start_s: float, duration_s: float, out_path: str) -> str:
     """Cut a clip of exactly duration_s, with a short fade in and out.
@@ -24,7 +28,7 @@ def trim_clip(video_path: str, start_s: float, duration_s: float, out_path: str)
     start, duration, pad = _window(source, start_s, duration_s)
     destination = Path(out_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    filters = []
+    filters = [LOOK]
     if pad >= 0.01:
         filters.append(f"tpad=stop_mode=clone:stop_duration={pad:.3f}")
     fade = min(0.4, duration / 4)
@@ -60,8 +64,10 @@ def trim_clip(video_path: str, start_s: float, duration_s: float, out_path: str)
     return str(destination)
 
 
-def concat_clips(clip_paths: list[str], out_path: str) -> str:
-    """Join clips made by trim_clip into one file. They share a codec, so no re-encode."""
+def concat_clips(clip_paths: list[str], out_path: str, crossfade_s: float = 0.0) -> str:
+    """Join clips made by trim_clip into one file. They share a codec, so a plain join
+    needs no re-encode. With crossfade_s each cut dissolves into the next; every clip
+    but the last must then be crossfade_s longer than its share of the total."""
     if not clip_paths:
         raise ValueError("no clips to join")
     ffmpeg = shutil.which("ffmpeg")
@@ -72,6 +78,8 @@ def concat_clips(clip_paths: list[str], out_path: str) -> str:
     if len(clip_paths) == 1:
         shutil.copyfile(clip_paths[0], destination)
         return str(destination)
+    if crossfade_s > 0:
+        return _crossfade(ffmpeg, clip_paths, destination, crossfade_s)
     with tempfile.TemporaryDirectory() as tmp:
         listing = Path(tmp) / "clips.txt"
         lines = []
@@ -87,6 +95,26 @@ def concat_clips(clip_paths: list[str], out_path: str) -> str:
     if result.returncode != 0 or not destination.is_file():
         detail = result.stderr.strip().splitlines()
         raise RuntimeError(detail[-1] if detail else "ffmpeg concat failed")
+    return str(destination)
+
+
+def _crossfade(ffmpeg: str, clip_paths: list[str], destination: Path, fade: float) -> str:
+    inputs, chain, offset, last = [], [], 0.0, "[0:v]"
+    for path in clip_paths:
+        inputs += ["-i", str(path)]
+    for i in range(1, len(clip_paths)):
+        offset += (_duration(Path(clip_paths[i - 1])) or 0.0) - fade
+        out = f"[x{i}]"
+        chain.append(f"{last}[{i}:v]xfade=transition=fade:duration={fade:.3f}:offset={offset:.3f}{out}")
+        last = out
+    command = [
+        ffmpeg, "-y", *inputs, "-filter_complex", ";".join(chain), "-map", last, "-an",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-movflags", "+faststart", str(destination),
+    ]
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0 or not destination.is_file():
+        detail = result.stderr.strip().splitlines()
+        raise RuntimeError(detail[-1] if detail else "ffmpeg crossfade failed")
     return str(destination)
 
 

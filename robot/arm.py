@@ -100,7 +100,7 @@ class Arm:
         elif "object_side_xy" in replay:
             print(f"[Arm] {move}: take {replay['episode']}, its object was at {replay['object_side_xy']} vs now {self.target_side_xy}")
         rows = np.array(replay["actions"], dtype=float)
-        centerer = self._centerer()  # starts finding the object during the ease-in
+        centerer = self._centerer(move)  # starts finding the object during the ease-in
         first = rows[0]
         gap = float(np.abs(np.array(self.get_state()) - first)[:5].max())
         if gap > 3.0:
@@ -163,8 +163,10 @@ class Arm:
         if gap > 3.0:
             self._ease_to(first, max(2.0, gap / EASE_IN_DEG_PER_S))
 
-    def _centerer(self):
+    def _centerer(self, move: str):
         if not self.center_on or self.wrist is None or _flag("NO_CENTERING"):
+            return None
+        if not SHOTS.get(move, {}).get("center", True):
             return None
         from robot.centering import CALIBRATION, Centerer, ObjectTracker
 

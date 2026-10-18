@@ -52,6 +52,14 @@ def save_pose(name: str, joints: list[float]) -> None:
     POSES[name] = list(saved[name])
 
 
+def _clear_of_table(take: dict) -> bool:
+    """False for takes whose recording dipped below the table guard's floor (they came at
+    their object hardest; replaying one elsewhere drove the claw into the duck)."""
+    from robot.safety import FLOOR_Z, lowest_z
+
+    return min(lowest_z(row) for row in take["actions"][::3]) >= FLOOR_Z
+
+
 def load_replay(task: str, near: list[float] | None = None, wrist: dict | None = None) -> dict:
     """The task's replay, or with an index (robot/replays/<task>_all.json) the take whose
     object sat closest to the current one.
@@ -64,7 +72,7 @@ def load_replay(task: str, near: list[float] | None = None, wrist: dict | None =
     """
     index = REPLAY_DIR / f"{task}_all.json"
     if wrist is not None and index.is_file():
-        takes = [t for t in json.loads(index.read_text())["takes"] if t.get("wrist_xy")]
+        takes = [t for t in json.loads(index.read_text())["takes"] if t.get("wrist_xy") and _clear_of_table(t)]
         if takes:
             xy, q, jac = wrist["xy"], wrist["q"], wrist["jacobian"]
 

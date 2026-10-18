@@ -49,7 +49,7 @@ RECORD_SLACK_S = 10
 # Each shot is filmed for duration / KEEP and the middle is kept: the arm moves at about
 # the recorded speed, and the unfold from rest and the fold back are cut.
 KEEP = 0.7
-VLA_WARM_TIMEOUT_S = 60
+VLA_WARM_TIMEOUT_S = 120  # grants have taken up to ~50 s
 POST_TIMEOUT_S = 30
 
 

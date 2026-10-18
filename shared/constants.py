@@ -24,7 +24,7 @@ SHOTS: dict[str, dict] = {
     # with no sentence cannot be trained and stays disabled.
     "overhead": {
         "enabled": False,
-        "vla_prompt": None,
+        "vla_prompt": "rise up over the object",
         "scripted": "overhead",
         "start_pose": "overhead_start",
         "order": 1,
@@ -36,7 +36,7 @@ SHOTS: dict[str, dict] = {
     },
     "sweep": {
         "enabled": False,
-        "vla_prompt": None,
+        "vla_prompt": "spin the camera above the object",
         "scripted": "sweep",
         "start_pose": "sweep_start",
         "order": 0,

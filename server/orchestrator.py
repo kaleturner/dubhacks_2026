@@ -202,6 +202,8 @@ class Orchestrator:
     async def _record(self, job_id: str, intent: Intent) -> list[asyncio.Task]:
         """Film every shot in order. Each shot's trim runs while the next one films."""
         trims: list[asyncio.Task] = []
+        if hasattr(self.arm, "center_on"):
+            self.arm.center_on = intent.object  # replays steer to keep it in the wrist view
         try:
             for index, shot in enumerate(intent.shots):
                 spec = self.registry[shot.task]

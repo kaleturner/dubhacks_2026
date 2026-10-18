@@ -49,6 +49,8 @@ class Arm:
         self._stop = threading.Event()
         self._sleep = time.sleep
         self._last_sent: list[float] | None = None
+        # Object name to keep centered in the wrist view during replays (robot/centering.py).
+        self.center_on: str | None = None
 
     # -- contract methods -------------------------------------------------
 
@@ -88,6 +90,7 @@ class Arm:
         """Replay the recorded demo for a task ("zoom", "overhead", "sweep"), stretched to duration_s."""
         self._stop.clear()
         rows = np.array(load_replay(move)["actions"], dtype=float)
+        centerer = self._centerer()  # starts finding the object during the ease-in
         first = rows[0]
         gap = float(np.abs(np.array(self.get_state()) - first)[:5].max())
         if gap > 3.0:
@@ -101,7 +104,27 @@ class Arm:
         speed = (len(rows) / self.hz) / max(duration_s, 1e-6)
         if speed > 2.0 or speed < 0.5:
             print(f"[Arm] warning: {move} replay runs at {speed:.1f}x the recorded speed")
-        self._play(scaled)
+        self._play(scaled, centerer.apply if centerer else None)
+        if centerer:
+            from robot import centering
+
+            centering._publish(object=None, state="searching", box=None, score=None)
+            print(
+                f"[Arm] {move}: {self.center_on} tracked {centerer.seen}/{centerer.ticks} ticks, "
+                f"final offset pan {centerer.offset[0]:+.1f} flex {centerer.offset[1]:+.1f} deg"
+            )
+
+    def _centerer(self):
+        if not self.center_on or self.wrist is None or _flag("NO_CENTERING"):
+            return None
+        from robot.centering import CALIBRATION, Centerer, ObjectTracker
+
+        if not CALIBRATION.is_file():
+            print("[Arm] no robot/centering.json; replaying without centering")
+            return None
+        centerer = Centerer(ObjectTracker(self.wrist, self.center_on))
+        centerer.tracker.poll()
+        return centerer
 
     def run_vla(self, instruction: str, duration_s: float) -> None:
         """Run the fine-tuned policy on one task sentence. See robot/vla_client.py."""
@@ -146,13 +169,13 @@ class Arm:
         rows = [start + (target - start) * smoothstep((i + 1) / n) for i in range(n)]
         self._play(np.array(rows))
 
-    def _play(self, rows: np.ndarray) -> None:
+    def _play(self, rows: np.ndarray, adjust=None) -> None:
         tick = 1.0 / self.hz
         next_t = time.monotonic()
         for row in rows:
             if self._stop.is_set():
                 return
-            self.send_joints(list(row))
+            self.send_joints(list(adjust(row) if adjust else row))
             next_t += tick
             delay = next_t - time.monotonic()
             if delay > 0:

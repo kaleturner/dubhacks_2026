@@ -33,6 +33,8 @@ class Camera:
         self._cap: cv2.VideoCapture | None = None
         self._frame: np.ndarray | None = None
         self._writer: cv2.VideoWriter | None = None
+        self._rec_start = 0.0
+        self._rec_written = 0
         self._lock = threading.Lock()
         self._running = False
         self._thread: threading.Thread | None = None
@@ -64,8 +66,7 @@ class Camera:
                 frame = cv2.resize(frame, (WIDTH, HEIGHT))
             with self._lock:
                 self._frame = frame
-                if self._writer is not None:
-                    self._writer.write(frame)
+                self._write(frame)
 
     def latest(self) -> np.ndarray | None:
         """BGR frame, 480x640x3. None until the first frame arrives."""
@@ -89,12 +90,25 @@ class Camera:
             raise RuntimeError("png encode failed")
         return buf.tobytes()
 
+    def _write(self, frame: np.ndarray) -> None:
+        """Hold the file at a steady FPS. The wrist cam delivers ~22 fps, so the newest
+        frame is repeated until the file catches up with the wall clock; otherwise a
+        10 s take plays back as 7.5 s. Caller holds the lock."""
+        if self._writer is None:
+            return
+        due = int((time.monotonic() - self._rec_start) * FPS) + 1
+        while self._rec_written < due:
+            self._writer.write(frame)
+            self._rec_written += 1
+
     def start_recording(self, path: str | Path) -> None:
         """Write every captured frame to an mp4v file. ml.trim re-encodes it to H.264 for the phone."""
         writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (WIDTH, HEIGHT))
         if not writer.isOpened():
             raise RuntimeError(f"cannot write {path}")
         with self._lock:
+            self._rec_start = time.monotonic()
+            self._rec_written = 0
             self._writer = writer
 
     def stop_recording(self) -> None:
@@ -131,8 +145,7 @@ class MockCamera(Camera):
             cv2.putText(frame, self.name, (16, 32), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
             with self._lock:
                 self._frame = frame
-                if self._writer is not None:
-                    self._writer.write(frame)
+                self._write(frame)
             tick += 1
             time.sleep(1 / FPS)
 

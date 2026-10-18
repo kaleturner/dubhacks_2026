@@ -274,7 +274,14 @@ def locate(image_path: str, obj: str) -> dict:
         return LocateResult(found=False, bbox=[], center=[]).model_dump()
     if _is_flat(image_path, bbox):
         return LocateResult(found=False, bbox=[], center=[]).model_dump()
+    # With the object out of view, Mk1.5 boxes most of the frame (~90%) instead of
+    # declining. A real object, even a close-up from the wrist cam, stays well under this.
+    if (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) > MAX_BOX_AREA * width * height:
+        return LocateResult(found=False, bbox=[], center=[]).model_dump()
     return LocateResult(found=True, bbox=bbox, center=center).model_dump()
+
+
+MAX_BOX_AREA = 0.6
 
 
 def _is_flat(image_path: str, bbox: list[float], min_std: float = 6.0) -> bool:

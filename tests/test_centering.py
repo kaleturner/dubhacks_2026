@@ -31,9 +31,15 @@ def make(start, visible=True):
     return centerer
 
 
+def at_calib(centerer):
+    row = np.zeros(6)
+    row[FLEX] = centerer.calib_flex
+    return row
+
+
 def test_offsets_bring_object_to_center():
     centerer = make((0.8, 0.25))
-    row = np.zeros(6)
+    row = at_calib(centerer)
     for _ in range(150):
         centerer.apply(row)
     cx, cy, _ = centerer.tracker.poll()
@@ -43,9 +49,10 @@ def test_offsets_bring_object_to_center():
 
 def test_offsets_apply_only_to_pan_and_flex():
     centerer = make((0.8, 0.25))
+    row = at_calib(centerer)
     for _ in range(20):
-        out = centerer.apply(np.zeros(6))
-    assert out[PAN] != 0 and out[FLEX] != 0
+        out = centerer.apply(row)
+    assert out[PAN] != 0 and out[FLEX] != row[FLEX]
     assert out[1] == out[2] == out[ROLL] == out[5] == 0
 
 
@@ -58,17 +65,28 @@ def test_no_object_no_correction():
 
 def test_rolling_freezes_offsets():
     centerer = make((0.8, 0.25))
-    centerer.apply(np.zeros(6))
+    centerer.apply(at_calib(centerer))
     frozen = centerer.offset.copy()
-    rolled = np.zeros(6)
+    rolled = at_calib(centerer)
     rolled[ROLL] = 90
     for _ in range(20):
         centerer.apply(rolled)
     assert np.allclose(centerer.offset, frozen)
 
 
+def test_looking_straight_down_freezes_offsets():
+    centerer = make((0.8, 0.25))
+    centerer.apply(at_calib(centerer))
+    frozen = centerer.offset.copy()
+    down = at_calib(centerer)
+    down[FLEX] += 35  # overhead and sweep poses
+    for _ in range(20):
+        centerer.apply(down)
+    assert np.allclose(centerer.offset, frozen)
+
+
 def test_live_state_reports_offset():
     centerer = make((0.8, 0.25))
     for _ in range(5):
-        centerer.apply(np.zeros(6))
+        centerer.apply(at_calib(centerer))
     assert centering.LIVE["offset"] == [round(float(v), 1) for v in centerer.offset]

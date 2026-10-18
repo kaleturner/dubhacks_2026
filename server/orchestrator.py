@@ -28,7 +28,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from ml.trim import concat_clips, trim_clip
+from ml.trim import CROSSFADE_S, concat_clips, trim_clip
 from robot.poses import SCOUT_POSES
 from server.config import MEDIA_DIR
 from shared.constants import SHOTS
@@ -42,6 +42,9 @@ SCOUT_MOVE_S = 1.5
 SCOUT_TIMEOUT_S = 15
 SCORE_TIMEOUT_S = 30
 RECORD_SLACK_S = 10
+# Each shot is filmed for duration / KEEP and the middle is kept: the arm moves at about
+# the recorded speed, and the unfold from rest and the fold back are cut.
+KEEP = 0.7
 POST_TIMEOUT_S = 30
 
 
@@ -220,8 +223,11 @@ class Orchestrator:
                 if not (self.use_vla and spec.get("vla_prompt")) and hasattr(self.arm, "prepare_shot"):
                     # Pick the recorded take that matches where the object is, before the camera rolls.
                     await self._call(SCOUT_TIMEOUT_S, "RECORD", self.arm.prepare_shot, spec["scripted"])
-                await self._film(raw_path, shot, spec)
-                trims.append(asyncio.create_task(self._trim(raw_path, clip_path, shot.duration_s)))
+                film_s = shot.duration_s / KEEP
+                await self._film(raw_path, shot, spec, film_s)
+                # Every clip but the last carries extra for the crossfade into the next one.
+                keep_s = shot.duration_s + (CROSSFADE_S if index < len(intent.shots) - 1 else 0.0)
+                trims.append(asyncio.create_task(self._trim(raw_path, clip_path, keep_s, film_s)))
         except BaseException:
             for task in trims:
                 task.cancel()
@@ -229,28 +235,28 @@ class Orchestrator:
             raise
         return trims
 
-    async def _film(self, raw_path: Path, shot: Shot, spec: dict) -> None:
+    async def _film(self, raw_path: Path, shot: Shot, spec: dict, film_s: float) -> None:
         await asyncio.to_thread(self.wrist.start_recording, raw_path)
         started = time.monotonic()
         try:
-            timeout = shot.duration_s + RECORD_SLACK_S
+            timeout = film_s + RECORD_SLACK_S
             if self.use_vla and spec.get("vla_prompt"):
-                await self._call(timeout, "RECORD", self.arm.run_vla, spec["vla_prompt"], shot.duration_s)
+                await self._call(timeout, "RECORD", self.arm.run_vla, spec["vla_prompt"], film_s)
             else:
-                await self._call(timeout, "RECORD", self.arm.run_scripted, spec["scripted"], shot.duration_s)
-            remain = shot.duration_s - (time.monotonic() - started)
+                await self._call(timeout, "RECORD", self.arm.run_scripted, spec["scripted"], film_s)
+            remain = film_s - (time.monotonic() - started)
             if remain > 0:
                 await asyncio.sleep(remain)
         finally:
             await asyncio.to_thread(self.wrist.stop_recording)
 
-    async def _trim(self, raw_path: Path, clip_path: Path, duration_s: float) -> str:
-        start_s = 0.5
+    async def _trim(self, raw_path: Path, clip_path: Path, duration_s: float, film_s: float) -> str:
+        start_s = max(0.0, (film_s - duration_s) / 2)  # the middle of the take
         try:
             raw_window = await asyncio.to_thread(self.perception.best_window, str(raw_path), duration_s)
             start_s = WindowResult.model_validate(raw_window).start_s
         except Exception:
-            start_s = 0.5
+            pass
         return await asyncio.to_thread(trim_clip, str(raw_path), start_s, duration_s, str(clip_path))
 
     async def _post(self, trims: list[asyncio.Task], job_id: str) -> None:
@@ -259,7 +265,7 @@ class Orchestrator:
 
         async def join() -> None:
             clips = await asyncio.gather(*trims)
-            await asyncio.to_thread(concat_clips, list(clips), str(final_path))
+            await asyncio.to_thread(concat_clips, list(clips), str(final_path), CROSSFADE_S)
 
         await self._await("POST", POST_TIMEOUT_S, join())
 

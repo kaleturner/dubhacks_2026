@@ -33,7 +33,7 @@ jobs:
       - name: Build
         working-directory: web
         env:
-          VITE_BASE: /
+          VITE_BASE: /dubhacks_2026/
           VITE_PAGES: "1"
         run: npm run build
       - uses: actions/upload-pages-artifact@v3

@@ -11,7 +11,7 @@ const script = [
   { delay: 500, msg: { type: "status", stage: "PLAN", detail: "best angle 1, 1 shot: zoom" } },
   { delay: 1200, msg: { type: "status", stage: "RECORD", detail: "shot 1/1: zoom, 15s, wrist cam rolling" } },
   { delay: 600, msg: { type: "status", stage: "POST", detail: "joining 1 shot" } },
-  { delay: 400, msg: { type: "result", job_id: "j1", url: "/media/j1_final.mp4", duration_s: 15, shots: [{ task: "zoom", duration_s: 15 }] } },
+  { delay: 400, msg: { type: "result", job_id: "j1", url: "/media/j1_final.mp4", duration_s: 15, shots: [{ task: "zoom", duration_s: 15 }], edit_url: "/media/j1_edit.mp4" } },
   { delay: 200, msg: { type: "status", stage: "DONE", detail: "clip ready" } },
 ];
 

@@ -4,10 +4,9 @@ function socketUrl() {
   return `${proto}//${location.host}/ws`;
 }
 
-const WS_URL = socketUrl();
-
 export function connectJob(text, handlers) {
-  const ws = new WebSocket(WS_URL);
+  const url = socketUrl();
+  const ws = new WebSocket(url);
   let finished = false;
   let closedByClient = false;
 
@@ -21,7 +20,7 @@ export function connectJob(text, handlers) {
     ws.send(JSON.stringify({ type: "prompt", text }));
   };
   ws.onerror = () => {
-    fail(`cannot reach ${WS_URL}`);
+    fail(`cannot reach ${url}`);
   };
   ws.onclose = () => {
     fail("connection closed");

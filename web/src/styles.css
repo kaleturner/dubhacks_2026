@@ -23,6 +23,14 @@ h1 {
   margin: 0 0 1rem;
 }
 
+h2 {
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #c6b48a;
+  margin: 1rem 0 0.4rem;
+}
+
 .eyebrow {
   letter-spacing: 0.08em;
   text-transform: uppercase;

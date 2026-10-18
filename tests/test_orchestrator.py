@@ -59,12 +59,23 @@ def duration(path):
     return float(out.stdout)
 
 
+def streams(path):
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", path],
+        capture_output=True,
+        text=True,
+    )
+    return out.stdout.split()
+
+
 def test_zoom_only_job_reaches_done():
     sent = run_job("record a 10 second zoom of this apple")
     assert sent[-1]["stage"] == "DONE"
     result = next(m for m in sent if m["type"] == "result")
     assert [s["task"] for s in result["shots"]] == ["zoom"]
     assert abs(duration("server/media/j1_final.mp4") - 10) < 0.3
+    assert result["edit_url"].endswith("_edit.mp4")
+    assert "audio" in streams("server/media/j1_edit.mp4")
 
 
 def test_two_shot_job_is_stitched_to_requested_length():

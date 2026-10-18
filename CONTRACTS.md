@@ -12,9 +12,9 @@ WebSocket: `wss://<PUBLIC_URL>/ws` (plain `ws://` on localhost). JSON text frame
 |---|---|
 | phone → server | `{"type":"prompt","text":"record a 15 second video of this apple"}` |
 | server → phone | `{"type":"status","stage":"PARSE"\|"LOCATE"\|"SCOUT"\|"PLAN"\|"RECORD"\|"POST"\|"DONE"\|"ERROR","detail":"...","stills":["/media/j1_pose_0.jpg"],"best_idx":2}` |
-| server → phone | `{"type":"result","job_id":"j1","url":"/media/j1_final.mp4","duration_s":15,"shots":[{"task":"zoom","duration_s":15}]}` |
+| server → phone | `{"type":"result","job_id":"j1","url":"/media/j1_final.mp4","duration_s":15,"shots":[{"task":"zoom","duration_s":15}],"edit_url":"/media/j1_edit.mp4"}` |
 
-`shots` on the result is optional: the planned tasks, in order. `duration_s` is their sum. Shot progress rides in the RECORD `detail` ("shot 1/2: zoom, ..."). `stills` and `best_idx` are optional. `stills` is the scout JPEGs under `/media`, sent with each SCOUT status after that still is saved and again on PLAN. `best_idx` is sent on PLAN.
+`shots` on the result is optional: the planned tasks, in order. `duration_s` is their sum. `edit_url` is optional: the graded cut with the CC0 electronic track, beside the raw file at `url`. Shot progress rides in the RECORD `detail` ("shot 1/2: zoom, ..."). `stills` and `best_idx` are optional. `stills` is the scout JPEGs under `/media`, sent with each SCOUT status after that still is saved and again on PLAN. `best_idx` is sent on PLAN.
 
 REST:
 

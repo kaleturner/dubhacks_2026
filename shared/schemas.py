@@ -37,6 +37,7 @@ class ResultMessage(BaseModel):
     url: str
     duration_s: float
     shots: list[Shot] | None = None
+    edit_url: str | None = None
 
 
 class Intent(BaseModel):

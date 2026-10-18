@@ -156,6 +156,8 @@ class Orchestrator:
             located = LocateResult.model_validate(raw)
         except ValidationError as exc:
             raise ValueError("could not locate the object") from exc
+        if hasattr(self.arm, "target_side_xy"):
+            self.arm.target_side_xy = located.center if located.found else None
         if not located.found:
             await self.status("ERROR", f"{intent.object} not in frame")
             return False

@@ -51,6 +51,8 @@ class Arm:
         self._last_sent: list[float] | None = None
         # Object name to keep centered in the wrist view during replays (robot/centering.py).
         self.center_on: str | None = None
+        # Where locate found the object in the side view; replays pick the take recorded nearest to it.
+        self.target_side_xy: list[float] | None = None
 
     # -- contract methods -------------------------------------------------
 
@@ -89,7 +91,10 @@ class Arm:
     def run_scripted(self, move: str, duration_s: float) -> None:
         """Replay the recorded demo for a task ("zoom", "overhead", "sweep"), stretched to duration_s."""
         self._stop.clear()
-        rows = np.array(load_replay(move)["actions"], dtype=float)
+        replay = load_replay(move, near=self.target_side_xy)
+        if "object_side_xy" in replay:
+            print(f"[Arm] {move}: take {replay['episode']}, its object was at {replay['object_side_xy']} vs now {self.target_side_xy}")
+        rows = np.array(replay["actions"], dtype=float)
         centerer = self._centerer()  # starts finding the object during the ease-in
         first = rows[0]
         gap = float(np.abs(np.array(self.get_state()) - first)[:5].max())

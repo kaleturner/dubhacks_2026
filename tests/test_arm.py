@@ -129,3 +129,20 @@ def test_connect_without_env_explains(monkeypatch):
     monkeypatch.delenv("ARM_ID", raising=False)
     with pytest.raises(RuntimeError, match="ARM_PORT"):
         arm_mod.Arm().connect()
+
+
+def test_replay_picks_take_nearest_the_object(tmp_path, monkeypatch):
+    import json
+
+    from robot import poses
+
+    takes = [
+        {"episode": 3, "object": "duck", "side_xy": [100, 300], "actions": [[1, 0, 0, 0, 0, 97]] * 2},
+        {"episode": 9, "object": "duck", "side_xy": [400, 250], "actions": [[9, 0, 0, 0, 0, 97]] * 2},
+    ]
+    (tmp_path / "zoom_all.json").write_text(json.dumps({"task": "zoom", "takes": takes}))
+    (tmp_path / "zoom.json").write_text(json.dumps({"task": "zoom", "actions": [[5, 0, 0, 0, 0, 97]] * 2}))
+    monkeypatch.setattr(poses, "REPLAY_DIR", tmp_path)
+    assert poses.load_replay("zoom", near=[380, 260])["episode"] == 9
+    assert poses.load_replay("zoom", near=[90, 310])["episode"] == 3
+    assert poses.load_replay("zoom")["actions"][0][0] == 5

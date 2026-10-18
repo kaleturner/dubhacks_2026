@@ -52,7 +52,15 @@ def save_pose(name: str, joints: list[float]) -> None:
     POSES[name] = list(saved[name])
 
 
-def load_replay(task: str) -> dict:
+def load_replay(task: str, near: list[float] | None = None) -> dict:
+    """The task's replay. With `near` (object center in the side view, pixels) and a
+    robot/replays/<task>_all.json index, the take whose object sat closest instead."""
+    index = REPLAY_DIR / f"{task}_all.json"
+    if near is not None and index.is_file():
+        takes = json.loads(index.read_text())["takes"]
+        if takes:
+            best = min(takes, key=lambda t: (t["side_xy"][0] - near[0]) ** 2 + (t["side_xy"][1] - near[1]) ** 2)
+            return {"task": task, "episode": best["episode"], "object_side_xy": best["side_xy"], "actions": best["actions"]}
     path = REPLAY_DIR / f"{task}.json"
     if not path.is_file():
         raise FileNotFoundError(

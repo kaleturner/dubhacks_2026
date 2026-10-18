@@ -3,6 +3,7 @@
 import json
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -56,6 +57,36 @@ def trim_clip(video_path: str, start_s: float, duration_s: float, out_path: str)
     if result.returncode != 0 or not destination.is_file():
         detail = result.stderr.strip().splitlines()
         raise RuntimeError(detail[-1] if detail else "ffmpeg failed")
+    return str(destination)
+
+
+def concat_clips(clip_paths: list[str], out_path: str) -> str:
+    """Join clips made by trim_clip into one file. They share a codec, so no re-encode."""
+    if not clip_paths:
+        raise ValueError("no clips to join")
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        raise RuntimeError("ffmpeg is not installed")
+    destination = Path(out_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if len(clip_paths) == 1:
+        shutil.copyfile(clip_paths[0], destination)
+        return str(destination)
+    with tempfile.TemporaryDirectory() as tmp:
+        listing = Path(tmp) / "clips.txt"
+        lines = []
+        for path in clip_paths:
+            quoted = str(Path(path).resolve()).replace("'", "'\\''")
+            lines.append(f"file '{quoted}'")
+        listing.write_text("\n".join(lines) + "\n")
+        command = [
+            ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
+            "-c", "copy", "-movflags", "+faststart", str(destination),
+        ]
+        result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0 or not destination.is_file():
+        detail = result.stderr.strip().splitlines()
+        raise RuntimeError(detail[-1] if detail else "ffmpeg concat failed")
     return str(destination)
 
 

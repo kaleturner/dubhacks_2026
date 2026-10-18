@@ -12,9 +12,9 @@ WebSocket: `wss://<PUBLIC_URL>/ws` (plain `ws://` on localhost). JSON text frame
 |---|---|
 | phone → server | `{"type":"prompt","text":"record a 15 second video of this apple"}` |
 | server → phone | `{"type":"status","stage":"PARSE"\|"LOCATE"\|"SCOUT"\|"PLAN"\|"RECORD"\|"POST"\|"DONE"\|"ERROR","detail":"...","stills":["/media/j1_pose_0.jpg"],"best_idx":2}` |
-| server → phone | `{"type":"result","job_id":"j1","url":"/media/j1_final.mp4","duration_s":15}` |
+| server → phone | `{"type":"result","job_id":"j1","url":"/media/j1_final.mp4","duration_s":15,"shots":[{"task":"zoom","duration_s":15}]}` |
 
-`stills` and `best_idx` are optional. `stills` is the scout JPEGs under `/media`, sent with each SCOUT status after that still is saved and again on PLAN. `best_idx` is sent on PLAN.
+`shots` on the result is optional: the planned tasks, in order. `duration_s` is their sum. Shot progress rides in the RECORD `detail` ("shot 1/2: zoom, ..."). `stills` and `best_idx` are optional. `stills` is the scout JPEGs under `/media`, sent with each SCOUT status after that still is saved and again on PLAN. `best_idx` is sent on PLAN.
 
 REST:
 
@@ -50,12 +50,12 @@ class Arm:
     def connect(self) -> None
     def get_state(self) -> list[float]  # shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll (deg), gripper (0-100)
     def move_to(self, pose: str | list[float], duration_s: float) -> None  # blocking
-    def run_scripted(self, move: str, duration_s: float) -> None  # "push_in" | "hero_rise" | "orbit_scripted"
+    def run_scripted(self, move: str, duration_s: float) -> None  # "zoom" | "overhead" | "sweep": replays that task's recorded demo from robot/replays/
     def run_vla(self, instruction: str, duration_s: float) -> None
     def stop(self) -> None
 ```
 
-`MockArm` implements the same methods. Scout names are `robot.poses.SCOUT_POSES` (`scout_0` … `scout_4`).
+`MockArm` implements the same methods. `Arm(side, wrist)` takes the shared cameras for the VLA; `send_joints(six)` is the one place a command reaches the motors (clamps, forces the gripper to `GRIPPER_HOLD`, honors `VLA_DRY_RUN=1`). Scout names are `robot.poses.SCOUT_POSES` (`scout_0` … `scout_4`).
 
 Real `move_to` is 30 Hz smoothstep, clamped to `robot.poses.JOINT_LIMITS`.
 
@@ -63,7 +63,10 @@ Real `move_to` is 30 Hz smoothstep, clamped to `robot.poses.JOINT_LIMITS`.
 
 ```python
 def parse_intent(text: str) -> dict
-    # {"object":"apple","duration_s":15,"move":"orbit"|"push_in"|"hero_rise","style":"..."}
+    # {"object":"apple","style":"...","shots":[{"task":"zoom","duration_s":15}],"note":null}
+    # tasks come from shared.constants.SHOTS and only enabled ones are offered.
+    # 1-3 shots, durations sum to the requested total (1-30 s). note says when a
+    # disabled move was asked for. shared.shots.normalize_shots makes any output safe.
 
 def locate(image_path: str, obj: str) -> dict
     # {"found":true,"bbox":[x1,y1,x2,y2],"center":[x,y]}
@@ -79,7 +82,7 @@ def best_window(video_path: str, duration_s: float) -> dict
 
 ## Agreed constants
 
-- VLA task prompt, verbatim, and the same string on every demonstration: `"orbit the camera around the object"` (`shared/constants.py`).
+- Tasks live in `SHOTS` in `shared/constants.py`. Each has one VLA sentence, verbatim, the same on every demonstration of that task and at inference. The tasks are `zoom` (in then out), `overhead`, and `sweep` (one full pass of the camera from above). Phase 1 trains `zoom`: `"push in toward the object and pull back"`. `overhead` and `sweep` have `vla_prompt: None` until their sentences are read from the recorded dataset, and stay `enabled: False` until trained (`shared/constants.py`).
 - Gripper hold: the gripper holds nothing. Robotics picks the value that keeps the jaws out of the wrist shot, records every demo with it, and writes it into `GRIPPER_HOLD`. After a chunk comes back in robot units, the client replaces only the gripper component with that value.
 - Joint names and the Isaac call sequence are in [WORKSHOP.md](WORKSHOP.md).
 - The team key lives in `team.key` (mode 600), never in git, commands, or chat. `.env` holds the other names from `.env.example`.

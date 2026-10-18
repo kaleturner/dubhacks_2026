@@ -4,11 +4,16 @@ Backend imports this module while USE_MOCKS=1.
 """
 
 from shared.schemas import Intent, LocateResult, ScoreResult, WindowResult
+from shared.shots import disabled_note, fallback_shots, guess_object
 
 
 def parse_intent(text: str) -> dict:
-    del text
-    return Intent(object="apple", duration_s=15, move="orbit", style="cinematic").model_dump()
+    return Intent(
+        object=guess_object(text),
+        style="cinematic",
+        shots=fallback_shots(text),
+        note=disabled_note(text),
+    ).model_dump()
 
 
 def locate(image_path: str, obj: str) -> dict:

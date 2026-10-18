@@ -1,1 +1,6 @@
-{ "object": "apple", "duration_s": 15, "move": "orbit", "style": "cinematic" }
+{
+  "object": "apple",
+  "style": "cinematic",
+  "shots": [{ "task": "zoom", "duration_s": 15 }],
+  "note": null
+}

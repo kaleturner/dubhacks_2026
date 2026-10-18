@@ -59,7 +59,7 @@ The wrist camera is also our filming camera, so the shot we deliver is the shot 
 ### Demonstrations
 
 - About 50 episodes. About 10 per object position, from 5 or 6 positions.
-- One task string for every episode, and the same string at inference: `orbit the camera around the object`.
+- One task string for every episode, and the same string at inference. Phase 1 has one task: `push in toward the object and pull back`.
 - Gripper empty at `GRIPPER_HOLD`. Slow, smooth moves; this footage style is what the policy learns. The C920 stays put. The apple stays in the wrist frame.
 - Start and stop on clean task boundaries.
 - After recording, replay an episode on the follower. If the replay does not match the demo, fix that before training.
@@ -124,7 +124,7 @@ Control loop, two threads, one clock:
 - 503/504: do not resend the stale frame. Capture a new one and hold.
 - 401 on inference usually means the session credentials expired, or the team key was sent there. Fresh grant, new session id, rewrite the headers, open a new robot session.
 
-Our orbit client lives in `robot/vla_client.py`. It must follow this loop, read frames from `robot.cameras`, and then overwrite the gripper component with `GRIPPER_HOLD`.
+Our policy client lives in `robot/vla_client.py`. It must follow this loop, read frames from `robot.cameras`, and then overwrite the gripper component with `GRIPPER_HOLD`.
 
 ## Five rules from the deck
 

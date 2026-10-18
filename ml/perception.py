@@ -17,7 +17,16 @@ from dotenv import load_dotenv
 from perceptron import Client, image, parse_annotations
 from PIL import Image as PILImage
 
+from shared.constants import MAX_SHOTS, MAX_TOTAL_S, SHOTS
 from shared.schemas import Intent, LocateResult, ScoreResult
+from shared.shots import (
+    disabled_note,
+    enabled_tasks,
+    fallback_shots,
+    guess_object,
+    normalize_shots,
+    parse_total,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
@@ -29,17 +38,32 @@ SCORE_TIMEOUT_S = 45
 
 _client: Client | None = None
 
-_INTENT_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "object": {"type": "string"},
-        "duration_s": {"type": "number", "minimum": 1, "maximum": 30},
-        "move": {"type": "string", "enum": ["orbit", "push_in", "hero_rise"]},
-        "style": {"type": "string"},
-    },
-    "required": ["object", "duration_s", "move", "style"],
-}
+def _intent_schema() -> dict:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "object": {"type": "string"},
+            "style": {"type": "string"},
+            "total_s": {"type": "number", "minimum": 1, "maximum": MAX_TOTAL_S},
+            "shots": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": MAX_SHOTS,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "task": {"type": "string", "enum": enabled_tasks()},
+                        "duration_s": {"type": "number", "minimum": 1, "maximum": MAX_TOTAL_S},
+                    },
+                    "required": ["task", "duration_s"],
+                },
+            },
+        },
+        "required": ["object", "style", "total_s", "shots"],
+    }
+
 
 _SCORE_SCHEMA = {
     "type": "object",
@@ -64,14 +88,20 @@ _SCORE_SCHEMA = {
     "required": ["best_idx", "scores"],
 }
 
-_INTENT_PROMPT = (
-    "Read this filming request and fill the JSON fields. "
-    "object is the thing they named. If they name nothing, use apple. "
-    "duration_s is the length in seconds from 1 to 30. If they give none, use 15. "
-    "move is orbit for circle, around, or orbit; push_in for a push-in or dolly in; "
-    "hero_rise for a rise or hero shot. If they name no move, use orbit. "
-    "style is a short look. If they name none, use cinematic."
-)
+def _intent_prompt() -> str:
+    menu = "; ".join(f"{name}: {SHOTS[name]['look']}" for name in enabled_tasks())
+    return (
+        "Read this filming request and plan the shots. "
+        "object is the thing they named. If they name nothing, use apple. "
+        "total_s is the finished length in seconds from 1 to 30. If they give none, use 15. "
+        f"shots is an ordered list drawn only from this menu: {menu}. "
+        "If they name a move, use exactly that move. "
+        "If the request is general, such as an ad, a showcase, or a cinematic video, "
+        "pick the one to three shots that suit it, with the establishing shot first and the hero shot last. "
+        "Never repeat a task. The shot durations should add up to total_s. "
+        "style is a short look. If they name none, use cinematic."
+    )
+
 
 _PRESENT_SCHEMA = {
     "type": "object",
@@ -182,18 +212,21 @@ def _matches(mention: str | None, obj: str) -> bool:
 
 
 def parse_intent(text: str) -> dict:
-    """Return Intent: object, duration_s, move, style."""
-    payload = _json_call(
-        [{"role": "user", "content": f"{_INTENT_PROMPT}\n\nRequest: {text.strip()}"}],
-        _INTENT_SCHEMA,
-        "intent",
-        PARSE_TIMEOUT_S,
-    )
-    if not str(payload.get("object", "")).strip():
-        payload["object"] = "apple"
-    if not str(payload.get("style", "")).strip():
-        payload["style"] = "cinematic"
-    return Intent.model_validate(payload).model_dump()
+    """Return Intent: object, style, shots [{task, duration_s}], note."""
+    try:
+        payload = _json_call(
+            [{"role": "user", "content": f"{_intent_prompt()}\n\nRequest: {text.strip()}"}],
+            _intent_schema(),
+            "intent",
+            PARSE_TIMEOUT_S,
+        )
+    except Exception:
+        payload = {}
+    total = payload.get("total_s") or parse_total(text)
+    shots = normalize_shots(payload.get("shots"), total) or fallback_shots(text, total)
+    obj = str(payload.get("object", "")).strip() or guess_object(text)
+    style = str(payload.get("style", "")).strip() or "cinematic"
+    return Intent(object=obj, style=style, shots=shots, note=disabled_note(text)).model_dump()
 
 
 def locate(image_path: str, obj: str) -> dict:

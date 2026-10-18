@@ -4,14 +4,14 @@ const port = Number(process.env.MOCK_WS_PORT || 8787);
 const wss = new WebSocketServer({ port });
 
 const script = [
-  { delay: 400, msg: { type: "status", stage: "PARSE", detail: "apple, 15s, orbit" } },
+  { delay: 400, msg: { type: "status", stage: "PARSE", detail: "apple, 15s, 1 shot: zoom" } },
   { delay: 500, msg: { type: "status", stage: "LOCATE", detail: "apple found" } },
   { delay: 500, msg: { type: "status", stage: "SCOUT", detail: "scout_0" } },
   { delay: 500, msg: { type: "status", stage: "SCOUT", detail: "scout_1" } },
-  { delay: 500, msg: { type: "status", stage: "PLAN", detail: "best angle 1, move orbit" } },
-  { delay: 1200, msg: { type: "status", stage: "RECORD", detail: "wrist cam rolling, orbit" } },
-  { delay: 600, msg: { type: "status", stage: "POST", detail: "trimming to 15s" } },
-  { delay: 400, msg: { type: "result", job_id: "j1", url: "/media/j1_final.mp4", duration_s: 15 } },
+  { delay: 500, msg: { type: "status", stage: "PLAN", detail: "best angle 1, 1 shot: zoom" } },
+  { delay: 1200, msg: { type: "status", stage: "RECORD", detail: "shot 1/1: zoom, 15s, wrist cam rolling" } },
+  { delay: 600, msg: { type: "status", stage: "POST", detail: "joining 1 shot" } },
+  { delay: 400, msg: { type: "result", job_id: "j1", url: "/media/j1_final.mp4", duration_s: 15, shots: [{ task: "zoom", duration_s: 15 }] } },
   { delay: 200, msg: { type: "status", stage: "DONE", detail: "clip ready" } },
 ];
 

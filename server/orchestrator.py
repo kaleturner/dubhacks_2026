@@ -10,11 +10,13 @@ Order, and the call that belongs there:
   LOCATE  side.save_still(...) → ml.perception.locate(path, obj)
   SCOUT   for each pose in robot.poses.SCOUT_POSES:
             arm.move_to(pose) → wrist.save_still(media/{job}_pose_{i}.jpg)
-  PLAN    ml.perception.score_angles(stills, obj) → choose orbit | push_in | hero_rise
-  RECORD  wrist.start_recording(media/{job}_raw.mp4)
-          → arm.run_vla or arm.run_scripted → wrist.stop_recording()
-  POST    ml.perception.best_window (optional) + ml.trim.trim_clip → {job}_final.mp4
-  DONE    send result {job_id, url, duration_s}
+  PLAN    ml.perception.score_angles(stills, obj) → best scout angle
+  RECORD  for each shot in intent.shots (the planner's task list, see shared.constants.SHOTS):
+            arm.move_to(start pose) → wrist.start_recording(media/{job}_s{i}_raw.mp4)
+            → arm.run_vla or arm.run_scripted → wrist.stop_recording()
+            and start trimming that shot in the background
+  POST    join the shot clips (ml.trim.concat_clips) → {job}_final.mp4
+  DONE    send result {job_id, url, duration_s, shots}
   ERROR   wrist.stop_recording(), arm.stop(), send status ERROR, and return
 """
 
@@ -26,11 +28,11 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from ml.trim import trim_clip
+from ml.trim import concat_clips, trim_clip
 from robot.poses import SCOUT_POSES
 from server.config import MEDIA_DIR
-from shared.constants import VLA_TASK_PROMPT
-from shared.schemas import Intent, LocateResult, ResultMessage, ScoreResult, WindowResult
+from shared.constants import SHOTS
+from shared.schemas import Intent, LocateResult, ResultMessage, ScoreResult, Shot, WindowResult
 
 Send = Callable[[dict], Awaitable[None]]
 
@@ -70,6 +72,8 @@ class Orchestrator:
         wrist: Any,
         perception: Any,
         gate: JobGate,
+        use_vla: bool = False,
+        registry: dict[str, dict] | None = None,
     ) -> None:
         self.send = send
         self.arm = arm
@@ -77,6 +81,8 @@ class Orchestrator:
         self.wrist = wrist
         self.perception = perception
         self.gate = gate
+        self.use_vla = use_vla
+        self.registry = SHOTS if registry is None else registry
 
     async def status(self, stage: str, detail: str, **extra: Any) -> None:
         payload: dict[str, Any] = {"type": "status", "stage": stage, "detail": detail}
@@ -111,14 +117,15 @@ class Orchestrator:
 
         stills, still_urls = await self._scout(job_id)
         await self._plan(stills, still_urls, intent)
-        raw_path = await self._record(job_id, intent)
-        await self._post(raw_path, job_id, intent)
+        trims = await self._record(job_id, intent)
+        await self._post(trims, job_id)
 
         result = ResultMessage(
             type="result",
             job_id=job_id,
             url=f"/media/{job_id}_final.mp4",
             duration_s=intent.duration_s,
+            shots=intent.shots,
         )
         await self.send(result.model_dump())
         await self.status("DONE", "clip ready")
@@ -130,7 +137,10 @@ class Orchestrator:
             intent = Intent.model_validate(raw)
         except ValidationError as exc:
             raise ValueError("could not parse the prompt") from exc
-        await self.status("PARSE", f"{intent.object}, {_seconds(intent.duration_s)}s, {intent.move}")
+        detail = f"{intent.object}, {_seconds(intent.duration_s)}s, {_describe(intent.shots)}"
+        if intent.note:
+            detail = f"{detail} ({intent.note})"
+        await self.status("PARSE", detail)
         return intent
 
     async def _locate(self, job_id: str, intent: Intent) -> bool:
@@ -183,66 +193,68 @@ class Orchestrator:
         best = min(max(scored.best_idx, 0), len(SCOUT_POSES) - 1)
         await self.status(
             "PLAN",
-            f"best angle {best}, move {intent.move}",
+            f"best angle {best}, {_describe(intent.shots)}",
             stills=still_urls,
             best_idx=best,
         )
         await self._call(SCOUT_TIMEOUT_S, "PLAN", self.arm.move_to, SCOUT_POSES[best], SCOUT_MOVE_S)
 
-    async def _record(self, job_id: str, intent: Intent) -> Path:
-        raw_path = MEDIA_DIR / f"{job_id}_raw.mp4"
-        await self.status("RECORD", f"wrist cam rolling, {intent.move}")
+    async def _record(self, job_id: str, intent: Intent) -> list[asyncio.Task]:
+        """Film every shot in order. Each shot's trim runs while the next one films."""
+        trims: list[asyncio.Task] = []
+        try:
+            for index, shot in enumerate(intent.shots):
+                spec = self.registry[shot.task]
+                raw_path = MEDIA_DIR / f"{job_id}_s{index}_raw.mp4"
+                clip_path = MEDIA_DIR / f"{job_id}_s{index}.mp4"
+                await self.status(
+                    "RECORD",
+                    f"shot {index + 1}/{len(intent.shots)}: {shot.task}, "
+                    f"{_seconds(shot.duration_s)}s, wrist cam rolling",
+                )
+                await self._call(SCOUT_TIMEOUT_S, "RECORD", self.arm.move_to, spec["start_pose"], SCOUT_MOVE_S)
+                await self._film(raw_path, shot, spec)
+                trims.append(asyncio.create_task(self._trim(raw_path, clip_path, shot.duration_s)))
+        except BaseException:
+            for task in trims:
+                task.cancel()
+            await asyncio.gather(*trims, return_exceptions=True)
+            raise
+        return trims
+
+    async def _film(self, raw_path: Path, shot: Shot, spec: dict) -> None:
         await asyncio.to_thread(self.wrist.start_recording, raw_path)
         started = time.monotonic()
         try:
-            timeout = intent.duration_s + RECORD_SLACK_S
-            if intent.move == "orbit":
-                await self._call(
-                    timeout,
-                    "RECORD",
-                    self.arm.run_vla,
-                    VLA_TASK_PROMPT,
-                    intent.duration_s,
-                )
+            timeout = shot.duration_s + RECORD_SLACK_S
+            if self.use_vla and spec.get("vla_prompt"):
+                await self._call(timeout, "RECORD", self.arm.run_vla, spec["vla_prompt"], shot.duration_s)
             else:
-                await self._call(
-                    timeout,
-                    "RECORD",
-                    self.arm.run_scripted,
-                    intent.move,
-                    intent.duration_s,
-                )
-            remain = intent.duration_s - (time.monotonic() - started)
+                await self._call(timeout, "RECORD", self.arm.run_scripted, spec["scripted"], shot.duration_s)
+            remain = shot.duration_s - (time.monotonic() - started)
             if remain > 0:
                 await asyncio.sleep(remain)
         finally:
             await asyncio.to_thread(self.wrist.stop_recording)
-        return raw_path
 
-    async def _post(self, raw_path: Path, job_id: str, intent: Intent) -> None:
-        final_path = MEDIA_DIR / f"{job_id}_final.mp4"
-        await self.status("POST", f"trimming to {_seconds(intent.duration_s)}s")
-
-        async def trim() -> None:
+    async def _trim(self, raw_path: Path, clip_path: Path, duration_s: float) -> str:
+        start_s = 0.5
+        try:
+            raw_window = await asyncio.to_thread(self.perception.best_window, str(raw_path), duration_s)
+            start_s = WindowResult.model_validate(raw_window).start_s
+        except Exception:
             start_s = 0.5
-            try:
-                raw_window = await asyncio.to_thread(
-                    self.perception.best_window,
-                    str(raw_path),
-                    intent.duration_s,
-                )
-                start_s = WindowResult.model_validate(raw_window).start_s
-            except Exception:
-                start_s = 0.5
-            await asyncio.to_thread(
-                trim_clip,
-                str(raw_path),
-                start_s,
-                intent.duration_s,
-                str(final_path),
-            )
+        return await asyncio.to_thread(trim_clip, str(raw_path), start_s, duration_s, str(clip_path))
 
-        await self._await("POST", POST_TIMEOUT_S, trim())
+    async def _post(self, trims: list[asyncio.Task], job_id: str) -> None:
+        final_path = MEDIA_DIR / f"{job_id}_final.mp4"
+        await self.status("POST", f"joining {len(trims)} shot{'s' if len(trims) != 1 else ''}")
+
+        async def join() -> None:
+            clips = await asyncio.gather(*trims)
+            await asyncio.to_thread(concat_clips, list(clips), str(final_path))
+
+        await self._await("POST", POST_TIMEOUT_S, join())
 
     async def _call(self, timeout: float, stage: str, fn: Callable, *args: Any) -> Any:
         return await self._await(stage, timeout, asyncio.to_thread(fn, *args))
@@ -266,3 +278,8 @@ class Orchestrator:
 
 def _seconds(value: float) -> str:
     return f"{value:g}"
+
+
+def _describe(shots: list[Shot]) -> str:
+    names = " + ".join(shot.task for shot in shots)
+    return f"{len(shots)} shot{'s' if len(shots) != 1 else ''}: {names}"

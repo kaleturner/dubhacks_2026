@@ -18,6 +18,9 @@ _FONTS = (
     "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/TTF/FiraSans-Bold.ttf",
     "/usr/share/fonts/liberation/LiberationSans-Bold.ttf",
+    # macOS, where the server runs next to the arm; without these the title was skipped.
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/Library/Fonts/Arial Bold.ttf",
 )
 
 

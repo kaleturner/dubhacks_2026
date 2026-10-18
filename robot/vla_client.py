@@ -177,6 +177,9 @@ class SessionClient:
         self.contract_id = ""
         self.profile = dict(DEFAULT_PROFILE)
         self.sequence = 0
+        self.time_offset = 0.0  # seconds; keeps timestamps increasing when a session runs several shots
+        self.last_timestamp = -1.0
+        self.opened_at = 0.0
         self._style = 0
         self.logged_keys = False
 
@@ -211,6 +214,7 @@ class SessionClient:
             ["/deployments/{d}/sessions", "/v1/inference/deployments/{d}/sessions"],
             json={"instruction": self.instruction, "contract_id": self.contract_id, "rtc_enabled": True},
         )
+        self.opened_at = time.monotonic()
         print(f"[vla] session {self.session_id}, reply keys {sorted(reply)}, paths style {self._style}")
 
     def predict(self, *, state, side_image, wrist_image, tick, rtc=None) -> Chunk:
@@ -218,7 +222,7 @@ class SessionClient:
             "contract_id": self.contract_id,
             "observation_id": f"{self.session_id}-{self.sequence}",
             "sequence": self.sequence,
-            "timestamp_seconds": tick / self.profile["fps"],
+            "timestamp_seconds": self.time_offset + tick / self.profile["fps"],
             "state": [float(v) for v in state],
             "image_encoding": "jpeg",
             "deadline_ms": self.profile["deadline_ms"],
@@ -226,6 +230,7 @@ class SessionClient:
         if rtc is not None:
             meta["rtc"] = rtc
         self.sequence += 1
+        self.last_timestamp = meta["timestamp_seconds"]
         files = {
             "metadata": (None, json.dumps(meta), "application/json"),
             "side": ("side.jpg", side_image, "image/jpeg"),
@@ -241,6 +246,14 @@ class SessionClient:
             self.logged_keys = True
             print(f"[vla] first predict reply keys: {sorted(reply) if isinstance(reply, dict) else type(reply)}")
         return parse_chunk(reply)
+
+    def begin_episode(self) -> None:
+        """Start another shot on this open session: reset the policy's state, keep the clock going."""
+        self.time_offset = self.last_timestamp + 1.0
+        try:
+            self._send("POST", ["/sessions/{s}/reset", "/v1/inference/sessions/{s}/reset"], timeout=10.0)
+        except InferenceError as exc:
+            print(f"[vla] reset not accepted ({exc.status}); continuing on the same session")
 
     def close(self) -> None:
         try:
@@ -273,6 +286,39 @@ class _Flight:
     done: threading.Event = field(default_factory=threading.Event)
 
 
+# The session grant can take 10-20 s while the service assigns capacity, so sessions are
+# opened ahead of filming (warm_session) and reused across shots and jobs until near expiry.
+_WARM: dict[tuple[str, str], SessionClient] = {}
+_WARM_LOCK = threading.Lock()  # guards the two dicts; each key's own lock covers its slow open
+_KEY_LOCKS: dict[tuple[str, str], threading.Lock] = {}
+SESSION_REUSE_S = 5 * 3600  # grants last 6 h
+
+
+def warm_session(instruction: str) -> SessionClient:
+    """An open session for this instruction, reused if it is still young."""
+    deployment_id = os.getenv("DEPLOYMENT_ID", "").strip()
+    if not deployment_id:
+        raise RuntimeError("DEPLOYMENT_ID is empty. Run: python -m ml.upload_and_train deployments")
+    key = (deployment_id, instruction)
+    with _WARM_LOCK:
+        key_lock = _KEY_LOCKS.setdefault(key, threading.Lock())
+    with key_lock:
+        session = _WARM.get(key)
+        if session is None or time.monotonic() - session.opened_at > SESSION_REUSE_S:
+            session = SessionClient(deployment_id, instruction)
+            session.open()
+            with _WARM_LOCK:
+                _WARM[key] = session
+        return session
+
+
+def _forget(session: SessionClient) -> None:
+    with _WARM_LOCK:
+        for key, value in list(_WARM.items()):
+            if value is session:
+                del _WARM[key]
+
+
 def run_task(
     instruction: str,
     duration_s: float,
@@ -285,13 +331,18 @@ def run_task(
     clock=time.monotonic,
     sleep=time.sleep,
 ) -> None:
-    """Blocking. Runs the policy for duration_s on one instruction, then deletes the session."""
-    if session is None:
-        deployment_id = os.getenv("DEPLOYMENT_ID", "").strip()
-        if not deployment_id:
-            raise RuntimeError("DEPLOYMENT_ID is empty. Run: python -m ml.upload_and_train deployments")
-        session = SessionClient(deployment_id, instruction)
-    session.open()
+    """Blocking. Runs the policy for duration_s on one instruction.
+
+    Without `session` it uses the warm session for the instruction and leaves it open for the
+    next shot; a session passed in is opened here and deleted at the end.
+    """
+    owned = session is not None
+    if owned:
+        session.open()
+    else:
+        session = warm_session(instruction)
+        if session.sequence:
+            session.begin_episode()
     player = Player(session.profile)
     fps = player.fps
     t0 = clock()
@@ -322,6 +373,7 @@ def run_task(
                     err = flight.error
                     failures += 1
                     if (isinstance(err, InferenceError) and err.status == 401) or failures >= MAX_CONSECUTIVE_FAILURES:
+                        _forget(session)  # expired or broken: the next shot opens a fresh one
                         raise err
                     print(f"[vla] predict failed, holding: {err}")
                 elif player.accept(flight.chunk, flight.request_tick, flight.arrival_tick):
@@ -347,7 +399,8 @@ def run_task(
             arm.hold()
         except Exception:
             pass
-        session.close()
+        if owned:
+            session.close()
 
 
 def main() -> None:

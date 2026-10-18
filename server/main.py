@@ -78,6 +78,15 @@ async def lifespan(app: FastAPI):
     app.state.perception = perception
     app.state.gate = JobGate()
     app.state.messages = message_log()
+    if USE_VLA and hasattr(arm, "warm_vla"):
+        # Grants take 10-20 s; have the policy sessions open before the first prompt.
+        import threading
+
+        from shared.constants import SHOTS
+
+        for spec in SHOTS.values():
+            if spec.get("enabled") and spec.get("vla_prompt"):
+                threading.Thread(target=arm.warm_vla, args=(spec["vla_prompt"],), daemon=True).start()
     try:
         yield
     finally:

@@ -49,6 +49,7 @@ RECORD_SLACK_S = 10
 # Each shot is filmed for duration / KEEP and the middle is kept: the arm moves at about
 # the recorded speed, and the unfold from rest and the fold back are cut.
 KEEP = 0.7
+VLA_WARM_TIMEOUT_S = 60
 POST_TIMEOUT_S = 30
 
 
@@ -115,6 +116,11 @@ class Orchestrator:
             self.gate.release()
 
     async def _run(self, text: str, job_id: str) -> None:
+        if self.use_vla and hasattr(self.arm, "warm_vla"):
+            # Open every shot's policy session in the background while we parse and scout.
+            for spec in self.registry.values():
+                if spec.get("enabled") and spec.get("vla_prompt"):
+                    asyncio.create_task(asyncio.to_thread(self._warm_quietly, spec["vla_prompt"]))
         intent = await self._parse(text)
         if intent is None:
             return
@@ -225,7 +231,10 @@ class Orchestrator:
                     f"{_seconds(shot.duration_s)}s, wrist cam rolling",
                 )
                 await self._call(SCOUT_TIMEOUT_S, "RECORD", self.arm.move_to, spec["start_pose"], SCOUT_MOVE_S)
-                if not (self.use_vla and spec.get("vla_prompt")) and hasattr(self.arm, "prepare_shot"):
+                if self.use_vla and spec.get("vla_prompt") and hasattr(self.arm, "warm_vla"):
+                    # The session grant can take 10-20 s; get it before the camera rolls.
+                    await self._call(VLA_WARM_TIMEOUT_S, "RECORD", self.arm.warm_vla, spec["vla_prompt"])
+                elif hasattr(self.arm, "prepare_shot"):
                     # Pick the recorded take that matches where the object is, before the camera rolls.
                     await self._call(SCOUT_TIMEOUT_S, "RECORD", self.arm.prepare_shot, spec["scripted"])
                 film_s = shot.duration_s / KEEP
@@ -254,6 +263,12 @@ class Orchestrator:
                 await asyncio.sleep(remain)
         finally:
             await asyncio.to_thread(self.wrist.stop_recording)
+
+    def _warm_quietly(self, instruction: str) -> None:
+        try:
+            self.arm.warm_vla(instruction)
+        except Exception as exc:  # the shot itself retries and reports
+            logging.getLogger(__name__).warning("warming %r failed: %s", instruction, exc)
 
     async def _trim(self, raw_path: Path, clip_path: Path, duration_s: float, film_s: float) -> str:
         start_s = max(0.0, (film_s - duration_s) / 2)  # the middle of the take

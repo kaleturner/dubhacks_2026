@@ -177,6 +177,12 @@ class Arm:
         centerer.tracker.poll()
         return centerer
 
+    def warm_vla(self, instruction: str) -> None:
+        """Open (or reuse) the policy session for an instruction before filming starts."""
+        from robot.vla_client import warm_session
+
+        warm_session(instruction)
+
     def run_vla(self, instruction: str, duration_s: float) -> None:
         """Run the fine-tuned policy on one task sentence. See robot/vla_client.py."""
         if self.side is None or self.wrist is None:

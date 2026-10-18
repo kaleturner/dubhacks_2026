@@ -80,6 +80,16 @@ class Camera:
         cv2.imwrite(str(path), frame, [cv2.IMWRITE_JPEG_QUALITY, 92])
         return str(path)
 
+    def jpeg_bytes(self, quality: int = 90) -> bytes:
+        """The latest frame as JPEG. Isaac accepts it, and it uploads ~10x smaller than PNG."""
+        frame = self.latest()
+        if frame is None:
+            raise RuntimeError(f"{self.name} camera has no frame yet")
+        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        if not ok:
+            raise RuntimeError("jpeg encode failed")
+        return buf.tobytes()
+
     def png_bytes(self) -> bytes:
         """The latest frame as PNG, the format Isaac predict expects."""
         frame = self.latest()

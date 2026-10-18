@@ -5,7 +5,7 @@ in WORKSHOP.md; the endpoints are in https://robotics.perceptron.inc/docs.
 
   grant   POST /v1/deployments/{id}/sessions          team key, ttl 21600
   open    POST {endpoint}/deployments/{id}/sessions   session tokens, never the team key
-  loop    POST {endpoint}/sessions/{sid}/predict      multipart: metadata + side + wrist PNG
+  loop    POST {endpoint}/sessions/{sid}/predict      multipart: metadata + side + wrist JPEG
   end     DELETE {endpoint}/sessions/{sid}
 
 The docs show two path styles (the curl walkthrough and a /v1/inference/ prefix),
@@ -45,6 +45,7 @@ from shared.robotics_api import BASE_URL, USER_AGENT, Api, ApiError, read_key
 
 DEFAULT_PROFILE = {"fps": 30, "execution_stride": 15, "max_prefix": 12, "deadline_ms": 400}
 MAX_CONSECUTIVE_FAILURES = 5
+JPEG_QUALITY = 75  # the deployment resizes to 448x448; higher quality only adds upload time
 LATENCY_MARGIN_TICKS = 2  # ask for a little more committed prefix than the average reply takes
 
 
@@ -168,7 +169,8 @@ class SessionClient:
         self.deployment_id = deployment_id
         self.instruction = instruction
         self.api = api
-        self.http = http or requests
+        # One kept-alive session: a fresh TLS handshake per predict cost ~100 ms of the 400 ms budget.
+        self.http = http or requests.Session()
         self.session_id = f"robot-{uuid.uuid4().hex[:10]}"
         self.endpoint = ""
         self.headers: dict[str, str] = {}
@@ -184,7 +186,7 @@ class SessionClient:
         profiles = caps.get("control_profiles") or []
         if profiles:
             self.profile = {**DEFAULT_PROFILE, **profiles[0]}
-        self.contract_id = str(api.call("GET", f"/v1/deployments/{self.deployment_id}/contract")["contract_id"])
+        control_contract = api.call("GET", f"/v1/deployments/{self.deployment_id}/contract")
         grant = api.call(
             "POST",
             f"/v1/deployments/{self.deployment_id}/sessions",
@@ -196,6 +198,14 @@ class SessionClient:
             "Modal-Authorization": f"Bearer {grant['modal_session_token']}",
             "User-Agent": USER_AGENT,
         }
+        # contract_id comes from the inference side's contract, read with the session
+        # credentials; the team-key contract carries only contract_sha256.
+        try:
+            contract = self._send("GET", ["/deployments/{d}/contract", "/v1/inference/deployments/{d}/contract"])
+            self.contract_id = str(contract.get("contract_id") or contract["contract_sha256"])
+        except (InferenceError, KeyError) as exc:
+            print(f"[vla] inference contract unavailable ({exc}); using the control contract hash")
+            self.contract_id = str(control_contract.get("contract_id") or control_contract["contract_sha256"])
         reply = self._send(
             "POST",
             ["/deployments/{d}/sessions", "/v1/inference/deployments/{d}/sessions"],
@@ -203,14 +213,14 @@ class SessionClient:
         )
         print(f"[vla] session {self.session_id}, reply keys {sorted(reply)}, paths style {self._style}")
 
-    def predict(self, *, state, side_png, wrist_png, tick, rtc=None) -> Chunk:
+    def predict(self, *, state, side_image, wrist_image, tick, rtc=None) -> Chunk:
         meta = {
             "contract_id": self.contract_id,
             "observation_id": f"{self.session_id}-{self.sequence}",
             "sequence": self.sequence,
             "timestamp_seconds": tick / self.profile["fps"],
             "state": [float(v) for v in state],
-            "image_encoding": "png",
+            "image_encoding": "jpeg",
             "deadline_ms": self.profile["deadline_ms"],
         }
         if rtc is not None:
@@ -218,8 +228,8 @@ class SessionClient:
         self.sequence += 1
         files = {
             "metadata": (None, json.dumps(meta), "application/json"),
-            "side": ("side.png", side_png, "image/png"),
-            "wrist": ("wrist.png", wrist_png, "image/png"),
+            "side": ("side.jpg", side_image, "image/jpeg"),
+            "wrist": ("wrist.jpg", wrist_image, "image/jpeg"),
         }
         reply = self._send(
             "POST",
@@ -292,8 +302,9 @@ def run_task(
         try:
             f.chunk = session.predict(
                 state=state,
-                side_png=side.png_bytes(),
-                wrist_png=wrist.png_bytes(),
+                # JPEG, not PNG: two PNGs took replies past the 400 ms deadline on venue Wi-Fi.
+                side_image=side.jpeg_bytes(JPEG_QUALITY),
+                wrist_image=wrist.jpeg_bytes(JPEG_QUALITY),
                 tick=f.request_tick,
                 rtc=rtc,
             )

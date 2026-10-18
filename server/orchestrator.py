@@ -156,6 +156,8 @@ class Orchestrator:
             located = LocateResult.model_validate(raw)
         except ValidationError as exc:
             raise ValueError("could not locate the object") from exc
+        if hasattr(self.arm, "target_side_xy"):
+            self.arm.target_side_xy = located.center if located.found else None
         if not located.found:
             await self.status("ERROR", f"{intent.object} not in frame")
             return False
@@ -202,6 +204,8 @@ class Orchestrator:
     async def _record(self, job_id: str, intent: Intent) -> list[asyncio.Task]:
         """Film every shot in order. Each shot's trim runs while the next one films."""
         trims: list[asyncio.Task] = []
+        if hasattr(self.arm, "center_on"):
+            self.arm.center_on = intent.object  # replays steer to keep it in the wrist view
         try:
             for index, shot in enumerate(intent.shots):
                 spec = self.registry[shot.task]

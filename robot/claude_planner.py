@@ -380,9 +380,9 @@ def find_pan(arm, wrist_cam, obj: str, log=print) -> tuple[float, np.ndarray]:
     return pan, frame
 
 
-def quick_shoot(arm, wrist_cam, side_cam, brief: str, seconds: float, out_path: str, takes: int = 2, log=print) -> dict:
+def quick_shoot(arm, wrist_cam, side_cam, brief: str, seconds: float, out_path: str, takes: int = 2, log=print, obj: str | None = None) -> dict:
     """Look once from above, plan from a pose menu facing the product, play with live centering."""
-    obj = "duck" if "duck" in brief.lower() else "product"
+    obj = obj or ("duck" if "duck" in brief.lower() else "product")
     planner = Planner()
     pan, overview = find_pan(arm, wrist_cam, obj, log)
     poses = quick_poses(pan)

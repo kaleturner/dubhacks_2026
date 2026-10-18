@@ -33,6 +33,7 @@ from server.config import (
     USE_MOCK_PERCEPTION,
     USE_MOCKS,
     USE_VLA,
+    USE_CLAUDE,
     WRIST_CAM_INDEX,
 )
 from server.dashboard import message_log, remember
@@ -147,6 +148,7 @@ async def ws(websocket: WebSocket) -> None:
         websocket.app.state.perception,
         websocket.app.state.gate,
         use_vla=USE_VLA,
+        use_claude=USE_CLAUDE,
     )
     try:
         while True:

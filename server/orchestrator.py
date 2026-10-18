@@ -28,6 +28,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
+import cv2
 from pydantic import ValidationError
 
 from ml.edit import cut_edit
@@ -49,6 +50,7 @@ RECORD_SLACK_S = 10
 # Each shot is filmed for duration / KEEP and the middle is kept: the arm moves at about
 # the recorded speed, and the unfold from rest and the fold back are cut.
 KEEP = 0.7
+CLAUDE_TIMEOUT_S = 300  # overview + up to two planned, filmed, reviewed takes
 POST_TIMEOUT_S = 30
 
 
@@ -81,6 +83,7 @@ class Orchestrator:
         gate: JobGate,
         use_vla: bool = False,
         registry: dict[str, dict] | None = None,
+        use_claude: bool = False,
     ) -> None:
         self.send = send
         self.arm = arm
@@ -89,6 +92,7 @@ class Orchestrator:
         self.perception = perception
         self.gate = gate
         self.use_vla = use_vla
+        self.use_claude = use_claude
         self.registry = SHOTS if registry is None else registry
 
     async def status(self, stage: str, detail: str, **extra: Any) -> None:
@@ -122,9 +126,12 @@ class Orchestrator:
         if not await self._locate(job_id, intent):
             return
 
-        stills, still_urls = await self._scout(job_id)
-        await self._plan(stills, still_urls, intent)
-        trims = await self._record(job_id, intent)
+        if self.use_claude:
+            trims = await self._claude(job_id, intent, text)
+        else:
+            stills, still_urls = await self._scout(job_id)
+            await self._plan(stills, still_urls, intent)
+            trims = await self._record(job_id, intent)
         edit_url = await self._post(trims, job_id, intent.object)
 
         result = ResultMessage(
@@ -254,6 +261,33 @@ class Orchestrator:
                 await asyncio.sleep(remain)
         finally:
             await asyncio.to_thread(self.wrist.stop_recording)
+
+    async def _claude(self, job_id: str, intent: Intent, text: str) -> list[asyncio.Task]:
+        """Claude looks, plans, films, reviews, and reshoots; its own words go to the phone."""
+        from robot.claude_planner import quick_shoot
+
+        loop = asyncio.get_running_loop()
+
+        def say(line: str) -> None:
+            line = line.removeprefix("[planner]").strip()
+            if line and not line[0].isdigit():  # skip the per-waypoint table
+                asyncio.run_coroutine_threadsafe(self.status("RECORD", f"Claude: {line}"[:400]), loop)
+
+        await self.status("RECORD", "Claude is looking at the scene")
+        brief = f"{text}. The product is the {intent.object}."
+        out = MEDIA_DIR / f"{job_id}_claude.mp4"
+        best = await self._await(
+            "RECORD",
+            CLAUDE_TIMEOUT_S,
+            asyncio.to_thread(quick_shoot, self.arm, self.wrist, self.side, brief, intent.duration_s, str(out), 2, say, intent.object),
+        )
+        take = Path(best["path"])
+        frames = cv2.VideoCapture(str(take))
+        film_s = frames.get(cv2.CAP_PROP_FRAME_COUNT) / (frames.get(cv2.CAP_PROP_FPS) or 30.0)
+        frames.release()
+        await self.status("RECORD", f"Claude kept take {take.stem[-1]} ({best['review']['score']}/10)")
+        clip = MEDIA_DIR / f"{job_id}_s0.mp4"
+        return [asyncio.create_task(self._trim(take, clip, intent.duration_s, film_s))]
 
     async def _trim(self, raw_path: Path, clip_path: Path, duration_s: float, film_s: float) -> str:
         start_s = max(0.0, (film_s - duration_s) / 2)  # the middle of the take

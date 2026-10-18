@@ -3,5 +3,6 @@
   "job_id": "j1",
   "url": "/media/j1_final.mp4",
   "duration_s": 15,
-  "shots": [{ "task": "zoom", "duration_s": 15 }]
+  "shots": [{ "task": "zoom", "duration_s": 15 }],
+  "edit_url": "/media/j1_edit.mp4"
 }

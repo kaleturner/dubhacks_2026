@@ -1,7 +1,11 @@
-import { wsUrl } from "./server.js";
+function socketUrl() {
+  if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL;
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}/ws`;
+}
 
 export function connectJob(text, handlers) {
-  const url = wsUrl();
+  const url = socketUrl();
   const ws = new WebSocket(url);
   let finished = false;
   let closedByClient = false;

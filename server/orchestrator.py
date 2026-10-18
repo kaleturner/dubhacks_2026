@@ -16,11 +16,13 @@ Order, and the call that belongs there:
             → arm.run_vla or arm.run_scripted → wrist.stop_recording()
             and start trimming that shot in the background
   POST    join the shot clips (ml.trim.concat_clips) → {job}_final.mp4
-  DONE    send result {job_id, url, duration_s, shots}
+          then cut {job}_edit.mp4 (graded, CC0 electronic track) beside it
+  DONE    send result {job_id, url, duration_s, shots, edit_url}
   ERROR   wrist.stop_recording(), arm.stop(), send status ERROR, and return
 """
 
 import asyncio
+import logging
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -28,6 +30,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from ml.edit import cut_edit
 from ml.trim import concat_clips, trim_clip
 from robot.poses import SCOUT_POSES
 from server.config import MEDIA_DIR
@@ -35,6 +38,7 @@ from shared.constants import SHOTS
 from shared.schemas import Intent, LocateResult, ResultMessage, ScoreResult, Shot, WindowResult
 
 Send = Callable[[dict], Awaitable[None]]
+log = logging.getLogger(__name__)
 
 PARSE_TIMEOUT_S = 20
 LOCATE_TIMEOUT_S = 20
@@ -118,7 +122,7 @@ class Orchestrator:
         stills, still_urls = await self._scout(job_id)
         await self._plan(stills, still_urls, intent)
         trims = await self._record(job_id, intent)
-        await self._post(trims, job_id)
+        edit_url = await self._post(trims, job_id, intent.object)
 
         result = ResultMessage(
             type="result",
@@ -126,8 +130,9 @@ class Orchestrator:
             url=f"/media/{job_id}_final.mp4",
             duration_s=intent.duration_s,
             shots=intent.shots,
+            edit_url=edit_url or None,
         )
-        await self.send(result.model_dump())
+        await self.send(result.model_dump(exclude_none=True))
         await self.status("DONE", "clip ready")
 
     async def _parse(self, text: str) -> Intent | None:
@@ -253,8 +258,9 @@ class Orchestrator:
             start_s = 0.5
         return await asyncio.to_thread(trim_clip, str(raw_path), start_s, duration_s, str(clip_path))
 
-    async def _post(self, trims: list[asyncio.Task], job_id: str) -> None:
+    async def _post(self, trims: list[asyncio.Task], job_id: str, title: str) -> str:
         final_path = MEDIA_DIR / f"{job_id}_final.mp4"
+        edit_path = MEDIA_DIR / f"{job_id}_edit.mp4"
         await self.status("POST", f"joining {len(trims)} shot{'s' if len(trims) != 1 else ''}")
 
         async def join() -> None:
@@ -262,6 +268,16 @@ class Orchestrator:
             await asyncio.to_thread(concat_clips, list(clips), str(final_path))
 
         await self._await("POST", POST_TIMEOUT_S, join())
+        await self.status("POST", "cutting the edit")
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(cut_edit, str(final_path), str(edit_path), 30, title),
+                timeout=POST_TIMEOUT_S,
+            )
+        except Exception as exc:
+            log.warning("edit failed: %s", exc)
+            return ""
+        return f"/media/{job_id}_edit.mp4"
 
     async def _call(self, timeout: float, stage: str, fn: Callable, *args: Any) -> Any:
         return await self._await(stage, timeout, asyncio.to_thread(fn, *args))

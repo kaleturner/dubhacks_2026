@@ -79,11 +79,14 @@ def test_late_reply_is_dropped_and_old_rows_keep_playing():
     assert p.row_for(20)[0] == 20
 
 
-def test_reply_whose_switch_point_has_passed_is_dropped():
+def test_reply_past_its_switch_point_takes_over_on_arrival():
     p = Player(PROFILE)
     p.accept(chunk(), 0, 3)
     p.row_for(3)
-    assert not p.accept(chunk(base=100, execute_from=2, cid="d"), request_tick=15, arrival_tick=19)
+    c = chunk(base=100, execute_from=2, cid="d")
+    assert p.accept(c, request_tick=15, arrival_tick=19)
+    assert c.execute_from == 4 and p.late_switches == 1
+    assert p.row_for(19) == c.rows[4]
 
 
 def test_holds_when_no_chunk_covers_the_tick():
@@ -114,7 +117,7 @@ def test_delay_follows_measured_latency_within_bounds():
     p = Player(PROFILE)
     for _ in range(30):
         p.accept(chunk(), 0, 0)
-    assert p.delay() == 1
+    assert 2 <= p.delay() <= 3  # measured latency ~0, plus the 2-row margin
     p.latency_ticks = 40
     assert p.delay() == 12
 

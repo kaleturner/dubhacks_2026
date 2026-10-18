@@ -19,6 +19,7 @@ import numpy as np
 from dotenv import load_dotenv
 
 from robot.poses import SCOUT_POSES, clamp_joints, load_replay, resolve_pose
+from robot.safety import above_floor
 from shared.constants import GRIPPER_HOLD, JOINT_NAMES, SHOTS
 
 __all__ = ["Arm", "MockArm", "SCOUT_POSES"]
@@ -49,10 +50,12 @@ class Arm:
         self._stop = threading.Event()
         self._sleep = time.sleep
         self._last_sent: list[float] | None = None
+        self.floor_lifts = 0  # commands raised by robot.safety to keep the gripper off the table
         # Object name to keep centered in the wrist view during replays (robot/centering.py).
         self.center_on: str | None = None
         # Where locate found the object in the side view; replays pick the take recorded nearest to it.
         self.target_side_xy: list[float] | None = None
+        self._prepared: dict[str, dict] = {}
 
     # -- contract methods -------------------------------------------------
 
@@ -91,8 +94,10 @@ class Arm:
     def run_scripted(self, move: str, duration_s: float) -> None:
         """Replay the recorded demo for a task ("zoom", "overhead", "sweep"), stretched to duration_s."""
         self._stop.clear()
-        replay = load_replay(move, near=self.target_side_xy)
-        if "object_side_xy" in replay:
+        replay = self._prepared.pop(move, None) or load_replay(move, near=self.target_side_xy)
+        if "miss" in replay:
+            print(f"[Arm] {move}: take {replay['episode']}, wrist-view miss {replay['miss']:.2f} of the frame")
+        elif "object_side_xy" in replay:
             print(f"[Arm] {move}: take {replay['episode']}, its object was at {replay['object_side_xy']} vs now {self.target_side_xy}")
         rows = np.array(replay["actions"], dtype=float)
         centerer = self._centerer()  # starts finding the object during the ease-in
@@ -118,6 +123,45 @@ class Arm:
                 f"[Arm] {move}: {self.center_on} tracked {centerer.seen}/{centerer.ticks} ticks, "
                 f"final offset pan {centerer.offset[0]:+.1f} flex {centerer.offset[1]:+.1f} deg"
             )
+        if self.floor_lifts:
+            print(f"[Arm] {move}: {self.floor_lifts} commands lifted to stay off the table")
+            self.floor_lifts = 0
+
+    def prepare_shot(self, move: str) -> None:
+        """Before filming: find the object in the wrist view, pick the recorded take that saw
+        it in the same place, and ease to that take's first frame."""
+        self._stop.clear()
+        if not self.center_on or self.wrist is None:
+            return
+        import json as _json
+        import tempfile
+
+        import cv2
+
+        from ml.perception import locate
+        from robot.centering import CALIBRATION
+
+        frame = self.wrist.latest()
+        if frame is None or not CALIBRATION.is_file():
+            return
+        path = Path(tempfile.gettempdir()) / "prepare_shot.jpg"
+        cv2.imwrite(str(path), frame)
+        found = locate(str(path), self.center_on)
+        if not found["found"]:
+            print(f"[Arm] {move}: {self.center_on} not in the wrist view; picking the take by the side view")
+            return
+        height, width = frame.shape[:2]
+        wrist = {
+            "xy": [found["center"][0] / width, found["center"][1] / height],
+            "q": self.get_state(),
+            "jacobian": _json.loads(CALIBRATION.read_text())["jacobian"],
+        }
+        replay = load_replay(move, wrist=wrist)
+        self._prepared[move] = replay
+        first = np.array(clamp_joints(list(replay["actions"][0])))
+        gap = float(np.abs(np.array(self.get_state()) - first)[:5].max())
+        if gap > 3.0:
+            self._ease_to(first, max(2.0, gap / EASE_IN_DEG_PER_S))
 
     def _centerer(self):
         if not self.center_on or self.wrist is None or _flag("NO_CENTERING"):
@@ -147,8 +191,11 @@ class Arm:
     # -- helpers ----------------------------------------------------------
 
     def send_joints(self, joints: list[float]) -> list[float]:
-        """The one place a command reaches the motors: clamp, force the gripper, then send."""
+        """The one place a command reaches the motors: clamp, keep off the table, force the gripper, then send."""
         out = clamp_joints([float(v) for v in joints])
+        out, lifted = above_floor(out)
+        if lifted:
+            self.floor_lifts += 1
         if GRIPPER_HOLD is not None:
             out[5] = float(GRIPPER_HOLD)
         self._last_sent = out

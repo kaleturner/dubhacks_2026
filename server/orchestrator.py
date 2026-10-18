@@ -217,6 +217,9 @@ class Orchestrator:
                     f"{_seconds(shot.duration_s)}s, wrist cam rolling",
                 )
                 await self._call(SCOUT_TIMEOUT_S, "RECORD", self.arm.move_to, spec["start_pose"], SCOUT_MOVE_S)
+                if not (self.use_vla and spec.get("vla_prompt")) and hasattr(self.arm, "prepare_shot"):
+                    # Pick the recorded take that matches where the object is, before the camera rolls.
+                    await self._call(SCOUT_TIMEOUT_S, "RECORD", self.arm.prepare_shot, spec["scripted"])
                 await self._film(raw_path, shot, spec)
                 trims.append(asyncio.create_task(self._trim(raw_path, clip_path, shot.duration_s)))
         except BaseException:

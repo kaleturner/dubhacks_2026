@@ -3,7 +3,7 @@
 Arm.run_vla calls run_task. The call sequence and the real-time chunk rules are
 in WORKSHOP.md; the endpoints are in https://robotics.perceptron.inc/docs.
 
-  grant   POST /v1/deployments/{id}/sessions          team key, ttl 21600
+  grant   POST /v1/deployments/{id}/sessions          team key, ttl 1800
   open    POST {endpoint}/deployments/{id}/sessions   session tokens, never the team key
   loop    POST {endpoint}/sessions/{sid}/predict      multipart: metadata + side + wrist JPEG
   end     DELETE {endpoint}/sessions/{sid}

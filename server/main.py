@@ -10,6 +10,8 @@ Run from the repo root:
   python -m uvicorn server.main:app --reload --port 8000
 """
 
+import asyncio
+import logging
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -18,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -33,6 +35,8 @@ from server.config import (
     WRIST_CAM_INDEX,
 )
 from server.orchestrator import JobGate, Orchestrator
+
+log = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -102,10 +106,23 @@ def health() -> dict:
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)) -> dict:
-    # Frontend fallback when webkitSpeechRecognition is missing.
-    # Replace this with speech-to-text. Shape is always {"text": "..."}.
-    _ = await file.read()
-    return {"text": ""}
+    """Audio file field `file` → {"text": "..."}. Mk1.5, after ffmpeg makes a wav."""
+    from ml.transcribe import transcribe_bytes
+    from shared.schemas import TranscribeResult
+
+    data = await file.read()
+    try:
+        text = await asyncio.to_thread(
+            transcribe_bytes,
+            data,
+            file.content_type or "",
+            file.filename or "",
+        )
+    except RuntimeError as exc:
+        log.warning("transcribe failed: %s", exc)
+        status = 400 if str(exc) in {"empty recording", "recording is too long"} else 502
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+    return TranscribeResult(text=text).model_dump()
 
 
 @app.websocket("/ws")

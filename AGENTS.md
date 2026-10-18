@@ -10,9 +10,9 @@ Team board for humans and coding agents. Read this, `PLAN.md`, `CONTRACTS.md`, a
 - Backend orchestrator runs PARSE → DONE on MockArm and MockCamera when perception is mocked. `ml.trim.trim_clip` writes an H.264 `{job}_final.mp4`. Status messages may include `stills` and `best_idx`.
 - Real Mk1.5 is on for this checkout: `USE_MOCK_PERCEPTION=0`, arm and cameras still mocked. `parse_intent`, `locate`, and `score_angles` are tuned on nine circuit-board photos. A grey mock frame returns “not in frame.” `best_window` still falls back to `start_s=0.5`.
 - `PUBLIC_URL` is `https://behaviour-alphabetical-consecutive-wife.trycloudflare.com` (Cloudflare quick tunnel to port 8000). It serves the built phone app, `/ws`, and `/media` on that one origin, and stays up only while `cloudflared` is running. `npm run dev` talks to `ws://localhost:8000/ws`.
-- `POST /transcribe` is still an empty string. Mic records and posts when speech recognition is missing.
+- `POST /transcribe` sends the mic clip to Mk1.5 and returns `{"text":"..."}`. The Mic button uses the browser recognizer when it has one, and otherwise records until a pause and fills the prompt from that route.
 - Open decisions: the measured `GRIPPER_HOLD`, and the camera indexes.
-- Blockers: none for the mock loop or for Mk1.5 on stills. The real arm, the zoom demos, and speech-to-text are still open.
+- Blockers: none for the mock loop, for Mk1.5 on stills, or for speech-to-text.
 
 ## Tracks
 
@@ -91,3 +91,4 @@ Append a row. Newest at the bottom.
 
 | Sat 8:45 PM | robotics | Replays for zoom, overhead, and sweep built from the 80-episode set (`duck-shots-v3-final`: schema-unified parquet + fix_gripper, preflight OK). Real arm connects with ARM_ID=follower and replays zoom smoothly. |
 | Sat 9:30 PM | robotics | Real-arm job on replays reaches DONE: "30 second ad for this duck" → zoom + overhead + sweep, 30 s clip. All three shots enabled, min_s 10 (≤1.5x replay speed), repeated tasks merge. locate trusts the box call (yes/no pre-check flipped on clear photos) plus a flat-crop guard. Scout poses come from replay frames. Tests write server/media/j1_* and overwrite real job files. |
+| Sat night | backend | `POST /transcribe` converts the mic clip to wav and asks Mk1.5 for the words. The Mic button fills the prompt from the browser recognizer, or from that route after a pause. |

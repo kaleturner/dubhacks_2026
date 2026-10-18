@@ -103,19 +103,6 @@ def _intent_prompt() -> str:
     )
 
 
-_PRESENT_SCHEMA = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {"present": {"type": "boolean"}},
-    "required": ["present"],
-}
-
-_PRESENT_PROMPT = (
-    "Is a real physical {obj} visible in this photo? "
-    "A plain colored square, a blank grey frame, or text does not count. "
-    "present is true only when the {obj} itself is visible."
-)
-
 _LOCATE_PROMPT = (
     "Locate the single {obj} in this photo. Return one point_box around only that "
     "object, with mention={obj} and asset_idx=0. Use normalized 0-1000 coordinates, "
@@ -149,7 +136,9 @@ def _sdk() -> Client:
 
 def _answer(response, *, allow_length: bool = False) -> str:
     choice = response.choices[0]
-    if choice.finish_reason != "stop" and not (allow_length and choice.finish_reason == "length"):
+    # Mk1.5 sometimes ends on tool_calls while the text answer is already complete.
+    finished = choice.finish_reason in ("stop", "tool_calls")
+    if not finished and not (allow_length and choice.finish_reason == "length"):
         raise RuntimeError(f"Mk1.5 stopped early: {choice.finish_reason}")
     text = (choice.message.content or "").strip()
     if not text:
@@ -165,25 +154,36 @@ def _json_call(
     *,
     reasoning_effort: str = "low",
     max_completion_tokens: int = 700,
+    attempts: int = 3,
 ) -> dict:
-    response = _sdk().chat.completions.create(
-        model=MODEL,
-        messages=messages,
-        max_completion_tokens=max_completion_tokens,
-        timeout=timeout,
-        reasoning_effort=reasoning_effort,
-        response_format={
-            "type": "json_schema",
-            "json_schema": {"name": name, "strict": True, "schema": schema},
-        },
-    )
-    try:
-        payload = json.loads(_answer(response))
-    except json.JSONDecodeError as exc:
-        raise RuntimeError("Mk1.5 returned invalid JSON") from exc
-    if not isinstance(payload, dict):
-        raise RuntimeError("Mk1.5 returned JSON that is not an object")
-    return payload
+    """Structured call. An early stop or bad JSON is retried; the last failure is raised."""
+    error: Exception | None = None
+    for _ in range(attempts):
+        response = _sdk().chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            max_completion_tokens=max_completion_tokens,
+            timeout=timeout,
+            reasoning_effort=reasoning_effort,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": name, "strict": True, "schema": schema},
+            },
+        )
+        try:
+            payload = json.loads(_answer(response))
+        except json.JSONDecodeError:
+            error = RuntimeError("Mk1.5 returned invalid JSON")
+            continue
+        except RuntimeError as exc:
+            error = exc
+            continue
+        if not isinstance(payload, dict):
+            error = RuntimeError("Mk1.5 returned JSON that is not an object")
+            continue
+        return payload
+    assert error is not None
+    raise error
 
 
 def _axis(value: float, length: int) -> float:
@@ -233,39 +233,36 @@ def locate(image_path: str, obj: str) -> dict:
     """Return LocateResult: found, bbox [x1,y1,x2,y2], center [x,y]."""
     with PILImage.open(image_path) as frame:
         width, height = frame.size
-    present = _json_call(
-        [
-            {
-                "role": "user",
-                "content": [
-                    image(image_path),
-                    {"type": "text", "text": _PRESENT_PROMPT.format(obj=obj)},
-                ],
-            }
-        ],
-        _PRESENT_SCHEMA,
-        "present",
-        LOCATE_TIMEOUT_S,
-    )
-    if present.get("present") is not True:
-        return LocateResult(found=False, bbox=[], center=[]).model_dump()
-    response = _sdk().chat.completions.create(
-        model=MODEL,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    image(image_path),
-                    {"type": "text", "text": _LOCATE_PROMPT.format(obj=obj)},
-                ],
-            }
-        ],
-        max_completion_tokens=512,
-        timeout=LOCATE_TIMEOUT_S,
-        reasoning_effort="none",
-        vision_config={"annotation_format": "box"},
-    )
-    parsed = parse_annotations(_answer(response, allow_length=True), expects="box")
+    # The box call alone decides. A yes/no pre-check flipped to "no" on clear photos;
+    # the box prompt already refuses to box a missing object.
+    text = None
+    for attempt in range(3):
+        response = _sdk().chat.completions.create(
+            model=MODEL,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        image(image_path),
+                        {"type": "text", "text": _LOCATE_PROMPT.format(obj=obj)},
+                    ],
+                }
+            ],
+            max_completion_tokens=512,
+            timeout=LOCATE_TIMEOUT_S,
+            reasoning_effort="none",
+            vision_config={"annotation_format": "box"},
+        )
+        if not (response.choices[0].message.content or "").strip():
+            text = ""  # an empty answer is Mk1.5 declining to box a missing object
+            break
+        try:
+            text = _answer(response, allow_length=True)
+            break
+        except RuntimeError:
+            if attempt == 2:
+                raise
+    parsed = parse_annotations(text, expects="box")
     boxes = [segment["value"] for segment in parsed.segments if segment["kind"] == "box"]
     chosen = next((box for box in boxes if _matches(box.mention, obj)), None)
     if chosen is None and len(boxes) == 1:
@@ -275,7 +272,21 @@ def locate(image_path: str, obj: str) -> dict:
     bbox, center = _to_pixels(chosen, width, height)
     if bbox[2] - bbox[0] < 1 or bbox[3] - bbox[1] < 1:
         return LocateResult(found=False, bbox=[], center=[]).model_dump()
+    if _is_flat(image_path, bbox):
+        return LocateResult(found=False, bbox=[], center=[]).model_dump()
     return LocateResult(found=True, bbox=bbox, center=center).model_dump()
+
+
+def _is_flat(image_path: str, bbox: list[float], min_std: float = 6.0) -> bool:
+    """True when the boxed pixels are one flat color. Mk1.5 will box a "duck" on a blank frame."""
+    with PILImage.open(image_path) as frame:
+        crop = frame.convert("L").crop(tuple(int(round(v)) for v in bbox))
+        pixels = list(crop.getdata())
+    if not pixels:
+        return True
+    mean = sum(pixels) / len(pixels)
+    std = (sum((p - mean) ** 2 for p in pixels) / len(pixels)) ** 0.5
+    return std < min_std
 
 
 def score_angles(stills: list[str], obj: str) -> dict:

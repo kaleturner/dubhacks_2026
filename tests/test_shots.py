@@ -11,17 +11,19 @@ def total(shots):
     return round(sum(s["duration_s"] for s in shots), 2)
 
 
-def test_phase_one_only_zoom():
+def test_vague_15s_query_gets_one_establishing_shot():
+    # Three shots need 30 s at min_s 10, so a 15 s ad keeps only the first in story order.
     shots = fallback_shots("make a product ad for this apple")
-    assert [s["task"] for s in shots] == ["zoom"]
+    assert [s["task"] for s in shots] == ["sweep"]
     assert total(shots) == 15
 
 
 def test_disabled_move_is_reported_not_swapped_silently():
+    reg = {**SHOTS, "overhead": {**SHOTS["overhead"], "enabled": False}}
     text = "20 second overhead shot of this apple"
-    assert [s["task"] for s in fallback_shots(text)] == ["zoom"]
-    assert "overhead" in disabled_note(text)
-    assert disabled_note("zoom in on the apple") is None
+    assert "overhead" not in [s["task"] for s in fallback_shots(text, registry=reg)]
+    assert "overhead" in disabled_note(text, registry=reg)
+    assert disabled_note("zoom in on the apple", registry=reg) is None
 
 
 def test_named_moves_keep_order_and_total():
@@ -37,22 +39,26 @@ def test_vague_query_uses_story_order():
 
 
 def test_normalize_drops_unknown_and_caps():
-    raw = [{"task": "orbit", "duration_s": 5}] + [{"task": "zoom", "duration_s": 5}] * 5
+    raw = [{"task": "orbit", "duration_s": 5}] + [{"task": t, "duration_s": 5} for t in ("zoom", "sweep")] * 3
     shots = normalize_shots(raw, 12, ALL)
-    assert len(shots) == 3
-    assert all(s["task"] == "zoom" for s in shots)
+    assert [s["task"] for s in shots] == ["zoom", "sweep", "zoom"]
     assert total(shots) == 12
+
+
+def test_normalize_merges_repeated_task():
+    shots = normalize_shots([{"task": "zoom", "duration_s": 5}] * 3, 15)
+    assert shots == [{"task": "zoom", "duration_s": 15.0}]
 
 
 def test_normalize_empty_and_garbage():
     assert normalize_shots([], 10) == []
     assert normalize_shots(None, 10) == []
-    assert normalize_shots([{"task": "sweep", "duration_s": 5}], 10) == []
+    assert normalize_shots([{"task": "orbit", "duration_s": 5}], 10) == []
 
 
 def test_normalize_clamps_total_and_single_max():
     assert total(normalize_shots([{"task": "zoom", "duration_s": 5}], 99)) == 30
-    assert total(normalize_shots([{"task": "zoom", "duration_s": 5}], 0)) == 4
+    assert total(normalize_shots([{"task": "zoom", "duration_s": 5}], 0)) == SHOTS["zoom"]["min_s"]
 
 
 def test_normalize_respects_min_by_dropping_tail():

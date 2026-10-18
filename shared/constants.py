@@ -2,10 +2,11 @@
 
 # One entry per recorded task. `vla_prompt` is the sentence used on every demo of
 # that task and at inference: verbatim, never paraphrased. Only `enabled` tasks
-# are offered to the planner. Phase 1 trains and runs `zoom` alone.
+# are offered to the planner. All three are recorded (80 episodes) and replayable.
 #   scripted    Arm.run_scripted name, the fallback when the policy is unreliable
 #   start_pose  robot.poses.POSES key the arm moves to before the shot
 #   order       position in a multi-shot story (establishing first, hero last)
+#   min_s       demos run ~15 s; 10 s keeps a replay at most 1.5x recorded speed
 SHOTS: dict[str, dict] = {
     "zoom": {
         "enabled": True,
@@ -13,7 +14,7 @@ SHOTS: dict[str, dict] = {
         "scripted": "zoom",
         "start_pose": "zoom_start",
         "order": 2,
-        "min_s": 4,
+        "min_s": 10,
         "max_s": 30,
         "default_s": 15,
         "keywords": ("zoom", "push in", "push-in", "dolly", "close up", "close-up"),
@@ -23,28 +24,28 @@ SHOTS: dict[str, dict] = {
     # meta/tasks.parquet (python -m ml.check_dataset DIR --print-tasks). A task
     # with no sentence cannot be trained and stays disabled.
     "overhead": {
-        "enabled": False,
+        "enabled": True,
         "vla_prompt": "rise up over the object",
         "scripted": "overhead",
         "start_pose": "overhead_start",
         "order": 1,
-        "min_s": 4,
+        "min_s": 10,
         "max_s": 30,
         "default_s": 15,
         "keywords": ("overhead", "top down", "top-down", "birds eye", "bird's eye"),
-        "look": "fixed top-down view looking straight at the object",
+        "look": "camera arcs up and over until it looks straight down on the object",
     },
     "sweep": {
-        "enabled": False,
+        "enabled": True,
         "vla_prompt": "spin the camera above the object",
         "scripted": "sweep",
         "start_pose": "sweep_start",
         "order": 0,
-        "min_s": 4,
+        "min_s": 10,
         "max_s": 30,
         "default_s": 15,
-        "keywords": ("sweep", "scan", "pan", "from above"),
-        "look": "camera sweeps across the object in one pass from above",
+        "keywords": ("sweep", "spin", "rotate", "turntable", "scan", "pan", "from above"),
+        "look": "camera hovers above the object and rolls a full turn, so the object spins in frame",
     },
 }
 

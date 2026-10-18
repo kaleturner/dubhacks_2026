@@ -47,7 +47,11 @@ def normalize_shots(shots: Any, total_s: float | None, registry: Registry | None
             weight = 0.0
         if weight <= 0:
             weight = float(reg[task]["default_s"])
-        kept.append((task, weight))
+        # The same task twice in a row is one longer shot, not two sped-up replays.
+        if kept and kept[-1][0] == task:
+            kept[-1] = (task, kept[-1][1] + weight)
+        else:
+            kept.append((task, weight))
     kept = kept[:MAX_SHOTS]
     if not kept:
         return []

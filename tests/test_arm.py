@@ -67,7 +67,7 @@ def test_commands_are_clamped_and_gripper_is_forced(monkeypatch):
 def test_unsaved_pose_names_the_fix():
     arm, _ = make_arm()
     with pytest.raises(KeyError, match="record_poses"):
-        arm.move_to("scout_0", 1.0)
+        arm.move_to("scout_9", 1.0)
 
 
 def test_replay_starts_at_first_frame_and_fits_duration():
@@ -115,7 +115,7 @@ def test_dry_run_sends_nothing():
 def test_missing_replay_names_the_fix():
     arm, _ = make_arm()
     with pytest.raises(FileNotFoundError, match="make_replays"):
-        arm.run_scripted("overhead", 2.0)
+        arm.run_scripted("no_such_shot", 2.0)
 
 
 def test_vla_needs_cameras():

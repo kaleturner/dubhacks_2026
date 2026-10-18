@@ -138,7 +138,7 @@ def disabled_note(text: str, registry: Registry | None = None) -> str | None:
 
 def guess_object(text: str) -> str:
     match = re.search(
-        r"\b(?:of|at|on|around)\s+(?:this|the|a|an|my|that)?\s*([a-z][a-z \-]*?)"
+        r"\b(?:of|at|on|around|for)\s+(?:this|the|a|an|my|that)?\s*([a-z0-9][a-z0-9 \-]*?)"
         r"(?=\s+(?:for|in|with|from|using)\b|\s*[.,!?]|\s*$)",
         text.lower().strip(),
     )

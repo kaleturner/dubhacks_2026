@@ -71,6 +71,7 @@ def test_helpers():
     assert parse_total("record this") == 15
     assert guess_object("record a 15 second video of this apple") == "apple"
     assert guess_object("go") == "apple"
+    assert guess_object("make a 30 second product ad for this esp32") == "esp32"
 
 
 def test_intent_validation():

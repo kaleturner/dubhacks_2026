@@ -220,7 +220,8 @@ def parse_intent(text: str) -> dict:
             "intent",
             PARSE_TIMEOUT_S,
         )
-    except Exception:
+    except Exception as exc:  # fall back to keywords, but say why; a silent fallback filmed an "apple"
+        print(f"[perception] Mk1.5 could not parse {text!r}: {exc}; using the keyword fallback")
         payload = {}
     total = payload.get("total_s") or parse_total(text)
     shots = normalize_shots(payload.get("shots"), total) or fallback_shots(text, total)

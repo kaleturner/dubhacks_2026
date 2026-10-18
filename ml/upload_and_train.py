@@ -9,16 +9,14 @@ The team key is read from team.key (mode 600) and only ever sent to the control
 API. It is never an argument, never printed, and never sent to a signed upload
 URL. Every command can be rerun: progress is kept in ml/.train_state.json.
 
-Quota is two successful jobs. The first is the 1000-step check. `train` refuses
-more than 1000 steps unless you pass --allow-big, because the second job is
-reserved for the larger dataset and the 10k run.
+Quota is two successful jobs. `train` reads the allowed step counts from
+GET /v1/capabilities (1000 at the time of writing) and refuses anything else.
 """
 
 import argparse
 import hashlib
 import json
 import os
-import stat
 import sys
 import time
 import uuid
@@ -26,60 +24,16 @@ from pathlib import Path
 from urllib.parse import urljoin
 
 import requests
-from dotenv import load_dotenv
 
 from ml.check_dataset import check_dataset, dataset_files
+from shared.robotics_api import BASE_URL, USER_AGENT, Api, ApiError, read_key  # noqa: F401
 
 ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(ROOT / ".env")
 
-BASE_URL = os.getenv("ROBOTICS_BASE_URL", "https://robotics.perceptron.inc").rstrip("/")
-KEY_FILE = Path(os.getenv("TEAM_KEY_FILE", ROOT / "team.key"))
 STATE_FILE = ROOT / "ml" / ".train_state.json"
-USER_AGENT = "dubhacks-cinematic-recorder/0.1"
 BATCH_BYTES = 150 * 1024 * 1024  # keep each reservation well inside the 15 minute URL life
 POLL_S = 10
 FAILED = {"failed", "error", "rejected", "invalid", "cancelled", "canceled"}
-
-
-class ApiError(RuntimeError):
-    pass
-
-
-def read_key() -> str:
-    if not KEY_FILE.is_file():
-        raise SystemExit(f"{KEY_FILE} not found. Put the team key there (chmod 600). It is never passed on the command line.")
-    if KEY_FILE.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-        raise SystemExit(f"{KEY_FILE} is readable by others. Run: chmod 600 {KEY_FILE}")
-    key = KEY_FILE.read_text().strip()
-    if not key:
-        raise SystemExit(f"{KEY_FILE} is empty")
-    return key
-
-
-class Api:
-    """Control API calls. The key lives only in this object's Authorization header."""
-
-    def __init__(self, key: str) -> None:
-        self.http = requests.Session()
-        self.http.headers.update({"Authorization": f"Bearer {key}", "User-Agent": USER_AGENT})
-
-    def call(self, method: str, path: str, *, idem: str | None = None, body: dict | None = None, ok=(200, 201, 202)):
-        headers = {"Idempotency-Key": idem} if idem else {}
-        resp = self.http.request(method, BASE_URL + path, json=body, headers=headers, timeout=60, allow_redirects=False)
-        if resp.status_code == 303:
-            return self.poll_redirect(resp.headers.get("Location", ""))
-        if resp.status_code not in ok:
-            raise ApiError(f"{method} {path} -> {resp.status_code}: {resp.text[:400]}")
-        return resp.json() if resp.content else {}
-
-    @staticmethod
-    def poll_redirect(location: str):
-        """A 303 is a poll. Follow Location with no credentials and no body."""
-        resp = requests.get(urljoin(BASE_URL + "/", location), headers={"User-Agent": USER_AGENT}, timeout=60)
-        if resp.status_code != 200:
-            raise ApiError(f"poll {location} -> {resp.status_code}: {resp.text[:400]}")
-        return resp.json()
 
 
 def load_state() -> dict:
@@ -252,8 +206,6 @@ def cmd_upload(args) -> None:
 
 
 def cmd_train(args) -> None:
-    if args.steps > 1000 and not args.allow_big:
-        raise SystemExit("Only 1000 steps on this dataset: the second job is reserved for the larger dataset. Pass --allow-big to override.")
     if not args.yes:
         raise SystemExit("Quota is two successful jobs. Rerun with --yes to start this one.")
     state = load_state()
@@ -268,6 +220,9 @@ def cmd_train(args) -> None:
         raise SystemExit(f"dataset is {state_of(doc)}, not ready. Train only on ready.")
     caps = api.call("GET", "/v1/capabilities")
     print("capabilities:", json.dumps(caps)[:1500])
+    offered = caps.get("steps") or []
+    if args.steps not in offered:
+        raise SystemExit(f"steps={args.steps} is not offered. The API allows {offered}.")
 
     body = {
         "dataset_id": ds,
@@ -332,7 +287,6 @@ def main() -> None:
     p.add_argument("--steps", type=int, required=True)
     p.add_argument("--name")
     p.add_argument("--yes", action="store_true")
-    p.add_argument("--allow-big", action="store_true")
     p.add_argument("--timeout-min", type=float, default=120)
     p.set_defaults(fn=cmd_train)
     p = sub.add_parser("deployments")

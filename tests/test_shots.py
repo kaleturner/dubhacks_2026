@@ -32,7 +32,7 @@ def test_named_moves_keep_order_and_total():
 
 def test_vague_query_uses_story_order():
     shots = fallback_shots("make a product ad", registry=ALL)
-    assert [s["task"] for s in shots] == ["pan_out", "overhead", "zoom"]
+    assert [s["task"] for s in shots] == ["sweep", "overhead", "zoom"]
     assert total(shots) == 15
 
 
@@ -47,7 +47,7 @@ def test_normalize_drops_unknown_and_caps():
 def test_normalize_empty_and_garbage():
     assert normalize_shots([], 10) == []
     assert normalize_shots(None, 10) == []
-    assert normalize_shots([{"task": "pan_out", "duration_s": 5}], 10) == []
+    assert normalize_shots([{"task": "sweep", "duration_s": 5}], 10) == []
 
 
 def test_normalize_clamps_total_and_single_max():
@@ -56,7 +56,7 @@ def test_normalize_clamps_total_and_single_max():
 
 
 def test_normalize_respects_min_by_dropping_tail():
-    shots = normalize_shots([{"task": "zoom"}, {"task": "pan_out"}], 5)
+    shots = normalize_shots([{"task": "zoom"}, {"task": "sweep"}], 5)
     assert [s["task"] for s in shots] == ["zoom"]
 
 

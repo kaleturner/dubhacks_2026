@@ -227,7 +227,7 @@ class Orchestrator:
         started = time.monotonic()
         try:
             timeout = shot.duration_s + RECORD_SLACK_S
-            if self.use_vla:
+            if self.use_vla and spec.get("vla_prompt"):
                 await self._call(timeout, "RECORD", self.arm.run_vla, spec["vla_prompt"], shot.duration_s)
             else:
                 await self._call(timeout, "RECORD", self.arm.run_scripted, spec["scripted"], shot.duration_s)

@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
 
     side = CameraCls(SIDE_CAM_INDEX, "side")
     wrist = CameraCls(WRIST_CAM_INDEX, "wrist")
-    arm = ArmCls()
+    arm = ArmCls(side, wrist)
     try:
         side.open()
         try:

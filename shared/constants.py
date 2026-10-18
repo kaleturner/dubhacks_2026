@@ -15,33 +15,36 @@ SHOTS: dict[str, dict] = {
         "order": 2,
         "min_s": 4,
         "max_s": 30,
-        "default_s": 10,
+        "default_s": 15,
         "keywords": ("zoom", "push in", "push-in", "dolly", "close up", "close-up"),
         "look": "slow move toward the object, then back out",
     },
-    "pan_out": {
-        "enabled": False,
-        "vla_prompt": "pan the camera out from the object",
-        "scripted": "pan_out",
-        "start_pose": "pan_start",
-        "order": 0,
-        "min_s": 4,
-        "max_s": 20,
-        "default_s": 8,
-        "keywords": ("pan", "reveal", "pull back", "pull-back"),
-        "look": "sideways sweep that opens up the scene around the object",
-    },
+    # vla_prompt is None until the sentence is read from the recorded dataset's
+    # meta/tasks.parquet (python -m ml.check_dataset DIR --print-tasks). A task
+    # with no sentence cannot be trained and stays disabled.
     "overhead": {
         "enabled": False,
-        "vla_prompt": "film the object from overhead",
+        "vla_prompt": None,
         "scripted": "overhead",
         "start_pose": "overhead_start",
         "order": 1,
         "min_s": 4,
-        "max_s": 20,
-        "default_s": 8,
-        "keywords": ("overhead", "top down", "top-down", "birds eye", "bird's eye", "from above"),
-        "look": "top-down view looking straight at the object",
+        "max_s": 30,
+        "default_s": 15,
+        "keywords": ("overhead", "top down", "top-down", "birds eye", "bird's eye"),
+        "look": "fixed top-down view looking straight at the object",
+    },
+    "sweep": {
+        "enabled": False,
+        "vla_prompt": None,
+        "scripted": "sweep",
+        "start_pose": "sweep_start",
+        "order": 0,
+        "min_s": 4,
+        "max_s": 30,
+        "default_s": 15,
+        "keywords": ("sweep", "scan", "pan", "from above"),
+        "look": "camera sweeps across the object in one pass from above",
     },
 }
 
@@ -49,7 +52,7 @@ MAX_SHOTS = 3
 MAX_TOTAL_S = 30.0
 DEFAULT_TOTAL_S = 15.0
 
-SCRIPTED_MOVES = ("zoom", "pan_out", "overhead")
+SCRIPTED_MOVES = ("zoom", "overhead", "sweep")
 
 STAGES = ("PARSE", "LOCATE", "SCOUT", "PLAN", "RECORD", "POST", "DONE", "ERROR")
 

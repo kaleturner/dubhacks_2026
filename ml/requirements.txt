@@ -1,4 +1,5 @@
 -r ../requirements.txt
 perceptron>=0.4.0
 pyarrow
+# Real arm only: pip install "lerobot[feetech]"
 requests

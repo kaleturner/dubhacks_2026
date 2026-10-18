@@ -50,12 +50,12 @@ class Arm:
     def connect(self) -> None
     def get_state(self) -> list[float]  # shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll (deg), gripper (0-100)
     def move_to(self, pose: str | list[float], duration_s: float) -> None  # blocking
-    def run_scripted(self, move: str, duration_s: float) -> None  # "zoom" | "pan_out" | "overhead"
+    def run_scripted(self, move: str, duration_s: float) -> None  # "zoom" | "overhead" | "sweep": replays that task's recorded demo from robot/replays/
     def run_vla(self, instruction: str, duration_s: float) -> None
     def stop(self) -> None
 ```
 
-`MockArm` implements the same methods. Scout names are `robot.poses.SCOUT_POSES` (`scout_0` … `scout_4`).
+`MockArm` implements the same methods. `Arm(side, wrist)` takes the shared cameras for the VLA; `send_joints(six)` is the one place a command reaches the motors (clamps, forces the gripper to `GRIPPER_HOLD`, honors `VLA_DRY_RUN=1`). Scout names are `robot.poses.SCOUT_POSES` (`scout_0` … `scout_4`).
 
 Real `move_to` is 30 Hz smoothstep, clamped to `robot.poses.JOINT_LIMITS`.
 
@@ -82,7 +82,7 @@ def best_window(video_path: str, duration_s: float) -> dict
 
 ## Agreed constants
 
-- Tasks live in `SHOTS` in `shared/constants.py`. Each has one VLA sentence, verbatim, the same on every demonstration of that task and at inference. Phase 1 trains and runs `zoom` alone: `"push in toward the object and pull back"`. `pan_out` and `overhead` are defined but `enabled: False` until their demos are recorded and trained (`shared/constants.py`).
+- Tasks live in `SHOTS` in `shared/constants.py`. Each has one VLA sentence, verbatim, the same on every demonstration of that task and at inference. The tasks are `zoom` (in then out), `overhead`, and `sweep` (one full pass of the camera from above). Phase 1 trains `zoom`: `"push in toward the object and pull back"`. `overhead` and `sweep` have `vla_prompt: None` until their sentences are read from the recorded dataset, and stay `enabled: False` until trained (`shared/constants.py`).
 - Gripper hold: the gripper holds nothing. Robotics picks the value that keeps the jaws out of the wrist shot, records every demo with it, and writes it into `GRIPPER_HOLD`. After a chunk comes back in robot units, the client replaces only the gripper component with that value.
 - Joint names and the Isaac call sequence are in [WORKSHOP.md](WORKSHOP.md).
 - The team key lives in `team.key` (mode 600), never in git, commands, or chat. `.env` holds the other names from `.env.example`.

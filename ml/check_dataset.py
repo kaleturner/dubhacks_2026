@@ -39,24 +39,33 @@ def dataset_files(root: Path) -> list[Path]:
     return sorted(p for p in root.rglob("*") if p.is_file() and not p.name.startswith("."))
 
 
-def _tasks(root: Path) -> list[str]:
+def _tasks(root: Path) -> dict[int, str]:
+    """task_index -> task string, from tasks.parquet (v3) or tasks.jsonl (v2)."""
     parquet = root / "meta" / "tasks.parquet"
     jsonl = root / "meta" / "tasks.jsonl"
-    found: list[str] = []
+    found: dict[int, str] = {}
     if parquet.is_file():
-        table = pq.read_table(parquet)
-        for row in table.to_pylist():
-            found += [v for v in row.values() if isinstance(v, str)]
+        for row in pq.read_table(parquet).to_pylist():
+            text = next((v for v in row.values() if isinstance(v, str)), None)
+            index = row.get("task_index")
+            if text is not None and index is not None:
+                found[int(index)] = text
     elif jsonl.is_file():
         for line in jsonl.read_text().splitlines():
             if line.strip():
                 row = json.loads(line)
-                found.append(str(row.get("task", "")))
+                found[int(row["task_index"])] = str(row.get("task", ""))
     return found
 
 
-def check_dataset(root: str | Path, expected_task: str | None = None) -> Report:
-    expected = SHOTS["zoom"]["vla_prompt"] if expected_task is None else expected_task
+def registry_prompts() -> dict[str, str]:
+    """sentence -> task name, for every task that has a sentence."""
+    return {spec["vla_prompt"]: name for name, spec in SHOTS.items() if spec.get("vla_prompt")}
+
+
+def check_dataset(root: str | Path, expected_tasks: dict[str, str] | None = None) -> Report:
+    """expected_tasks maps sentence -> task name. Default: the SHOTS registry."""
+    expected = registry_prompts() if expected_tasks is None else expected_tasks
     root = Path(root).expanduser()
     rep = Report()
     info_path = root / "meta" / "info.json"
@@ -86,15 +95,30 @@ def check_dataset(root: str | Path, expected_task: str | None = None) -> Report:
             rep.errors.append(f"no videos for {cam}")
 
     tasks = _tasks(root)
-    rep.facts["tasks"] = tasks
-    if tasks != [expected]:
-        rep.errors.append(f"task strings are {tasks}, expected exactly [{expected!r}]")
+    rep.facts["tasks"] = sorted(tasks.values())
+    if not tasks:
+        rep.errors.append("no task strings found in meta/tasks")
+    for text in tasks.values():
+        if text not in expected:
+            rep.errors.append(
+                f"task string {text!r} is not in SHOTS. Add it as that task's vla_prompt, exactly, "
+                f"or fix the dataset. Known: {sorted(expected)}"
+            )
 
     data_files = sorted((root / "data").rglob("*.parquet"))
     if not data_files:
         rep.errors.append("no data/*.parquet files")
         return rep
-    table = pa.concat_tables([pq.read_table(f) for f in data_files])
+    # LeRobot writes action/state as fixed_size_list in some files and list in others.
+    list_type = pa.list_(pa.float32())
+    tables = []
+    for f in data_files:
+        t = pq.read_table(f)
+        for col in ("action", "observation.state"):
+            if col in t.column_names:
+                t = t.set_column(t.schema.get_field_index(col), col, t[col].cast(list_type))
+        tables.append(t)
+    table = pa.concat_tables(tables)
     episode = np.array(table["episode_index"])
     stamp = np.array(table["timestamp"])
     action = np.array(table["action"].to_pylist())
@@ -120,6 +144,15 @@ def check_dataset(root: str | Path, expected_task: str | None = None) -> Report:
     if dt.size and float(dt.max()) > 2.5 / FPS:
         rep.warnings.append(f"largest frame gap is {dt.max() * 1000:.0f} ms (dropped frames?)")
 
+    # Episodes per task, from each episode's first frame.
+    task_idx = np.array(table["task_index"]) if "task_index" in table.column_names else np.zeros(len(episode), int)
+    ep_task = {ep: tasks.get(int(task_idx[episode == ep][0]), "?") for ep in episodes}
+    per_task = Counter(ep_task.values())
+    rep.facts["episodes_per_task"] = dict(per_task)
+    for text, n in per_task.items():
+        if n < 10:
+            rep.warnings.append(f"only {n} episodes for {text!r}; the policy may not learn it")
+
     # The gripper holds nothing and stays out of the wrist shot. Demos should all
     # use one value, since inference overrides the gripper with GRIPPER_HOLD.
     grip = action[:, 5]
@@ -137,11 +170,15 @@ def check_dataset(root: str | Path, expected_task: str | None = None) -> Report:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("dataset", help="folder containing meta/, data/, videos/")
-    parser.add_argument("--task", help="expected task string (default: the zoom sentence)")
+    parser.add_argument("--print-tasks", action="store_true", help="print the task strings and exit")
     args = parser.parse_args()
-    rep = check_dataset(args.dataset, args.task)
+    if args.print_tasks:
+        for index, text in sorted(_tasks(Path(args.dataset).expanduser()).items()):
+            print(f"{index}\t{text!r}")
+        return 0
+    rep = check_dataset(args.dataset)
     f = rep.facts
-    print(f"episodes={f.get('episodes')} frames={f.get('frames')} tasks={f.get('tasks')}")
+    print(f"episodes={f.get('episodes')} frames={f.get('frames')} per_task={f.get('episodes_per_task')}")
     for w in rep.warnings:
         print("WARN ", w)
     for e in rep.errors:

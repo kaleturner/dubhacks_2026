@@ -1,6 +1,6 @@
 # Robotic Cinematic Ad Recorder: Team Plan (DubHacks '26 · Perceptron Robotics Track)
 
-> **Shots (Sat evening): phase 1 records and trains `zoom` (in then out) only.** `pan_out` and `overhead` are defined in `shared/constants.py` but disabled. The planner returns a shot list; the orbit, push-in, and hero-rise moves below are retired. `CONTRACTS.md` is the source of truth.
+> **Shots (Sat evening): phase 1 records and trains `zoom` (in then out) only.** `sweep` and `overhead` are defined in `shared/constants.py` but disabled. The planner returns a shot list; the orbit, push-in, and hero-rise moves below are retired. `CONTRACTS.md` is the source of truth.
 
 > **Pivot (Sat afternoon): the phone does not go in the gripper.** The gripper can't hold a phone safely, and the phone would block the wrist camera. The **wrist camera films**, the **C920 is the side camera**, and the phone is only the remote (prompt in, status and clip out). Sections below are updated; `CONTRACTS.md` is the source of truth.
 

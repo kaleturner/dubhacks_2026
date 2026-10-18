@@ -98,9 +98,18 @@ def normalize_shots(shots: Any, total_s: float | None, registry: Registry | None
     return [{"task": t, "duration_s": d} for (t, _), d in zip(kept, rounded, strict=True)]
 
 
+# Speech-to-text writes lengths out ("thirty second ad"), so read the common ones as words too.
+NUMBER_WORDS = {"ten": 10, "fifteen": 15, "twenty": 20, "twenty five": 25, "twenty-five": 25, "thirty": 30}
+
+
 def parse_total(text: str) -> float:
-    match = re.search(r"(\d+(?:\.\d+)?)\s*(?:s\b|sec|second)", text.lower())
-    return clamp_total(float(match.group(1))) if match else DEFAULT_TOTAL_S
+    lowered = text.lower()
+    match = re.search(r"(\d+(?:\.\d+)?)\s*-?\s*(?:s\b|sec|second)", lowered)
+    if match:
+        return clamp_total(float(match.group(1)))
+    words = "|".join(sorted(NUMBER_WORDS, key=len, reverse=True))
+    match = re.search(rf"\b({words})\s*-?\s*(?:sec|second)", lowered)
+    return clamp_total(NUMBER_WORDS[match.group(1)]) if match else DEFAULT_TOTAL_S
 
 
 def requested_tasks(text: str, registry: Registry | None = None) -> list[str]:

@@ -295,7 +295,7 @@ _KEY_LOCKS: dict[tuple[str, str], threading.Lock] = {}
 # and the deployment went into deployment_recovering after a night of restarts.
 SESSION_TTL_S = 1800
 SESSION_REUSE_S = SESSION_TTL_S - 300
-GRANT_RETRIES = 6
+GRANT_RETRIES = 20
 GRANT_RETRY_S = 10.0
 
 

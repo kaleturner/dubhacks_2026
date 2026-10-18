@@ -49,7 +49,7 @@ RECORD_SLACK_S = 10
 # Each shot is filmed for duration / KEEP and the middle is kept: the arm moves at about
 # the recorded speed, and the unfold from rest and the fold back are cut.
 KEEP = 0.7
-VLA_WARM_TIMEOUT_S = 45  # past this the shot is filmed as a replay
+VLA_WARM_TIMEOUT_S = 240  # per session, before the arm moves; past this the shot is filmed as a replay
 POST_TIMEOUT_S = 30
 
 
@@ -113,11 +113,8 @@ class Orchestrator:
             await self._stop_hardware()
             await self.status("ERROR", str(exc).strip() or exc.__class__.__name__)
         finally:
-            if self.use_vla:
-                # No policy session outlives its job; the deployment caps open sessions.
-                from robot.vla_client import close_warm_sessions
-
-                await asyncio.to_thread(close_warm_sessions)
+            # Policy sessions stay open for the next job. Grants hit deployment_recovering
+            # for minutes at a time, an open session keeps working; the server closes them on shutdown.
             self.gate.release()
 
     async def _run(self, text: str, job_id: str) -> None:
@@ -132,6 +129,8 @@ class Orchestrator:
         stills, still_urls = await self._scout(job_id)
         await self._plan(stills, still_urls, intent)
         trims = await self._record(job_id, intent)
+        # Policy shots end wherever the model left the arm; park it while the edit runs.
+        await self._call(SCOUT_TIMEOUT_S, "RECORD", self.arm.move_to, "home", SCOUT_MOVE_S)
         edit_url = await self._post(trims, job_id, intent.object, f"{text} {intent.style}")
 
         result = ResultMessage(
@@ -221,6 +220,7 @@ class Orchestrator:
         trims: list[asyncio.Task] = []
         if hasattr(self.arm, "center_on"):
             self.arm.center_on = intent.object  # replays steer to keep it in the wrist view
+        ready = await self._warm_policies(intent)
         try:
             for index, shot in enumerate(intent.shots):
                 spec = self.registry[shot.task]
@@ -233,15 +233,9 @@ class Orchestrator:
                 )
                 await self._call(SCOUT_TIMEOUT_S, "RECORD", self.arm.move_to, spec["start_pose"], SCOUT_MOVE_S)
                 policy = self.use_vla and spec.get("vla_prompt") and spec.get("engine", "vla") == "vla" and hasattr(self.arm, "warm_vla")
-                if policy:
-                    # Get the session before the camera rolls. The deployment has gone into
-                    # deployment_recovering for half an hour at a time; never let that stall the job.
-                    try:
-                        await self._call(VLA_WARM_TIMEOUT_S, "RECORD", self.arm.warm_vla, spec["vla_prompt"])
-                    except Exception as exc:
-                        log.warning("no policy session for %s: %s", shot.task, exc)
-                        policy = False
-                        await self.status("RECORD", f"Isaac unavailable, filming {shot.task} as a replay")
+                if policy and spec["vla_prompt"] not in ready:
+                    policy = False
+                    await self.status("RECORD", f"Isaac unavailable, filming {shot.task} as a replay")
                 if not policy and hasattr(self.arm, "prepare_shot"):
                     # Pick the recorded take that matches where the object is, before the camera rolls.
                     await self._call(SCOUT_TIMEOUT_S, "RECORD", self.arm.prepare_shot, spec["scripted"])
@@ -266,9 +260,15 @@ class Orchestrator:
                 prime = (spec["scripted"], float(spec.get("prime_s", 0.0)))
                 try:
                     await self._call(timeout, "RECORD", self.arm.run_vla, spec["vla_prompt"], film_s, *prime)
-                finally:
-                    # The deployment allows only a few open sessions; hold one at a time.
+                except TimeoutError:
+                    raise  # the policy thread may still be driving the arm; never start a replay over it
+                except Exception as exc:
+                    # A session that went stale mid-shot: drop it and finish the take as a replay.
+                    log.warning("policy failed during %s: %s", shot.task, exc)
                     await asyncio.to_thread(self.arm.release_vla, spec["vla_prompt"])
+                    await self.status("RECORD", f"Isaac dropped out, finishing {shot.task} as a replay")
+                    left = max(1.0, film_s - (time.monotonic() - started))
+                    await self._call(left + RECORD_SLACK_S, "RECORD", self.arm.run_scripted, spec["scripted"], left)
             else:
                 await self._call(timeout, "RECORD", self.arm.run_scripted, spec["scripted"], film_s)
             remain = film_s - (time.monotonic() - started)
@@ -276,6 +276,30 @@ class Orchestrator:
                 await asyncio.sleep(remain)
         finally:
             await asyncio.to_thread(self.wrist.stop_recording)
+
+    async def _warm_policies(self, intent: Intent) -> set[str]:
+        """Open every policy shot's session, one at a time, before the arm moves.
+
+        Sessions are reused across jobs, so after the first run this returns at once.
+        Returns the prompts that have a session; the other shots are filmed as replays.
+        """
+        if not (self.use_vla and hasattr(self.arm, "warm_vla")):
+            return set()
+        prompts: list[str] = []
+        for shot in intent.shots:
+            spec = self.registry[shot.task]
+            prompt = spec.get("vla_prompt")
+            if prompt and spec.get("engine", "vla") == "vla" and prompt not in prompts:
+                prompts.append(prompt)
+        ready: set[str] = set()
+        for index, prompt in enumerate(prompts):
+            await self.status("RECORD", f"getting Isaac ready ({index + 1}/{len(prompts)})")
+            try:
+                await self._call(VLA_WARM_TIMEOUT_S, "RECORD", self.arm.warm_vla, prompt)
+                ready.add(prompt)
+            except Exception as exc:
+                log.warning("no policy session for %r: %s", prompt, exc)
+        return ready
 
     def _warm_first_shot(self, intent: Intent) -> None:
         """Start the first policy shot's session grant now, so its 10-50 s wait overlaps

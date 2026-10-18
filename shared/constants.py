@@ -66,7 +66,7 @@ SHOTS: dict[str, dict] = {
 
 MAX_SHOTS = 3
 MAX_TOTAL_S = 30.0
-DEFAULT_TOTAL_S = 15.0
+DEFAULT_TOTAL_S = 30.0  # room for all three shots at their 10 s minimum
 
 SCRIPTED_MOVES = ("zoom", "overhead", "sweep")
 

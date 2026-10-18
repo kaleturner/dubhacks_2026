@@ -87,7 +87,7 @@ async def lifespan(app: FastAPI):
         def warm_all() -> None:
             # One grant at a time: bursts of parallel grants preceded deployment_recovering.
             for spec in SHOTS.values():
-                if spec.get("enabled") and spec.get("vla_prompt"):
+                if spec.get("enabled") and spec.get("vla_prompt") and spec.get("engine", "vla") == "vla":
                     try:
                         arm.warm_vla(spec["vla_prompt"])
                     except Exception as exc:

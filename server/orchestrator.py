@@ -119,7 +119,11 @@ class Orchestrator:
         if self.use_vla and hasattr(self.arm, "warm_vla"):
             # Open every shot's policy session in the background while we parse and scout,
             # one grant at a time (bursts of parallel grants preceded deployment_recovering).
-            prompts = [s["vla_prompt"] for s in self.registry.values() if s.get("enabled") and s.get("vla_prompt")]
+            prompts = [
+                s["vla_prompt"]
+                for s in self.registry.values()
+                if s.get("enabled") and s.get("vla_prompt") and s.get("engine", "vla") == "vla"
+            ]
             asyncio.create_task(asyncio.to_thread(lambda: [self._warm_quietly(p) for p in prompts]))
         intent = await self._parse(text)
         if intent is None:
@@ -231,7 +235,7 @@ class Orchestrator:
                     f"{_seconds(shot.duration_s)}s, wrist cam rolling",
                 )
                 await self._call(SCOUT_TIMEOUT_S, "RECORD", self.arm.move_to, spec["start_pose"], SCOUT_MOVE_S)
-                if self.use_vla and spec.get("vla_prompt") and hasattr(self.arm, "warm_vla"):
+                if self.use_vla and spec.get("vla_prompt") and spec.get("engine", "vla") == "vla" and hasattr(self.arm, "warm_vla"):
                     # The session grant can take 10-20 s; get it before the camera rolls.
                     await self._call(VLA_WARM_TIMEOUT_S, "RECORD", self.arm.warm_vla, spec["vla_prompt"])
                 elif hasattr(self.arm, "prepare_shot"):
@@ -254,7 +258,7 @@ class Orchestrator:
         started = time.monotonic()
         try:
             timeout = film_s + RECORD_SLACK_S
-            if self.use_vla and spec.get("vla_prompt"):
+            if self.use_vla and spec.get("vla_prompt") and spec.get("engine", "vla") == "vla":
                 await self._call(timeout, "RECORD", self.arm.run_vla, spec["vla_prompt"], film_s)
             else:
                 await self._call(timeout, "RECORD", self.arm.run_scripted, spec["scripted"], film_s)

@@ -7,12 +7,17 @@
 #   start_pose  robot.poses.POSES key the arm moves to before the shot
 #   order       position in a multi-shot story (establishing first, hero last)
 #   min_s       demos run ~15 s; 10 s keeps a replay at most 1.5x recorded speed
+#   engine      "vla" runs the deployed Isaac policy when USE_VLA is on, "replay" always
+#               replays. Live on the arm the 1k-step policy did a good overhead, but zoom
+#               barely moved and sweep did an overhead instead (it leans on the image more
+#               than the instruction), so those two stay on replays.
 #   center      steer the replay to keep the object centered (robot/centering.py). Off for
 #               sweep: its own fast pan into the top-down view wound the loop up and tilted
 #               the camera off the table for the whole roll; picking the take aims it instead
 SHOTS: dict[str, dict] = {
     "zoom": {
         "enabled": True,
+        "engine": "replay",
         "vla_prompt": "push in toward the object and pull back",
         "scripted": "zoom",
         "start_pose": "zoom_start",
@@ -28,6 +33,7 @@ SHOTS: dict[str, dict] = {
     # with no sentence cannot be trained and stays disabled.
     "overhead": {
         "enabled": True,
+        "engine": "vla",
         "vla_prompt": "rise up over the object",
         "scripted": "overhead",
         "start_pose": "overhead_start",
@@ -40,6 +46,7 @@ SHOTS: dict[str, dict] = {
     },
     "sweep": {
         "enabled": True,
+        "engine": "replay",
         "center": False,
         "vla_prompt": "spin the camera above the object",
         "scripted": "sweep",

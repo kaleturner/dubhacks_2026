@@ -1,0 +1,35 @@
+[
+  {
+    "id": "city-loop",
+    "file": "city-loop.mp3",
+    "name": "Chill",
+    "artist": "wipics",
+    "title": "City Loop",
+    "hint": "Soft electronic, for a calm product shot",
+    "source": "https://opengameart.org/content/city-loop-0",
+    "license": "CC0",
+    "words": ["calm", "soft", "cinematic", "elegant", "luxury", "gentle", "chill", "ambient", "quiet", "smooth", "classy", "moody", "intimate"]
+  },
+  {
+    "id": "trance-city",
+    "file": "trance-city.mp3",
+    "name": "Bright",
+    "artist": "MintoDog",
+    "title": "Trance City",
+    "hint": "Bright trance, for an upbeat ad",
+    "source": "https://opengameart.org/content/trance-city",
+    "license": "CC0",
+    "words": ["bright", "fun", "upbeat", "playful", "happy", "commercial", "pop", "sunny", "cheerful", "ad", "lively", "vibrant", "colorful"]
+  },
+  {
+    "id": "trance-battle",
+    "file": "trance-battle.mp3",
+    "name": "Drive",
+    "artist": "MintoDog",
+    "title": "Trance Battle",
+    "hint": "Driving trance, for a fast hype cut",
+    "source": "https://opengameart.org/content/trance-battle",
+    "license": "CC0",
+    "words": ["hype", "fast", "intense", "action", "epic", "party", "energetic", "bold", "hard", "wild", "pump", "dramatic", "punchy", "aggressive"]
+  }
+]

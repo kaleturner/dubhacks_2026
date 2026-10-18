@@ -16,7 +16,7 @@ Order, and the call that belongs there:
             → arm.run_vla or arm.run_scripted → wrist.stop_recording()
             and start trimming that shot in the background
   POST    join the shot clips (ml.trim.concat_clips) → {job}_final.mp4
-          then cut {job}_edit.mp4 (graded, CC0 electronic track) beside it
+          then cut {job}_edit.mp4 (claw cropped, dull stretches dropped, graded, on the beat)
   DONE    send result {job_id, url, duration_s, shots, edit_url}
   ERROR   wrist.stop_recording(), arm.stop(), send status ERROR, and return
 """
@@ -125,7 +125,7 @@ class Orchestrator:
         stills, still_urls = await self._scout(job_id)
         await self._plan(stills, still_urls, intent)
         trims = await self._record(job_id, intent)
-        edit_url = await self._post(trims, job_id, intent.object)
+        edit_url = await self._post(trims, job_id, intent.object, f"{text} {intent.style}")
 
         result = ResultMessage(
             type="result",
@@ -264,7 +264,7 @@ class Orchestrator:
             pass
         return await asyncio.to_thread(trim_clip, str(raw_path), start_s, duration_s, str(clip_path))
 
-    async def _post(self, trims: list[asyncio.Task], job_id: str, title: str) -> str:
+    async def _post(self, trims: list[asyncio.Task], job_id: str, title: str, prompt: str = "") -> str:
         final_path = MEDIA_DIR / f"{job_id}_final.mp4"
         edit_path = MEDIA_DIR / f"{job_id}_edit.mp4"
         await self.status("POST", f"joining {len(trims)} shot{'s' if len(trims) != 1 else ''}")
@@ -277,7 +277,7 @@ class Orchestrator:
         await self.status("POST", "cutting the edit")
         try:
             await asyncio.wait_for(
-                asyncio.to_thread(cut_edit, str(final_path), str(edit_path), 30, title),
+                asyncio.to_thread(cut_edit, str(final_path), str(edit_path), 30, title, prompt),
                 timeout=POST_TIMEOUT_S,
             )
         except Exception as exc:

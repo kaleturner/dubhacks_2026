@@ -54,6 +54,10 @@ textarea {
   margin-top: 1rem;
 }
 
+.row.wrap { flex-wrap: wrap; }
+
+.raw { margin-top: 1.25rem; }
+
 button, .button {
   flex: 1;
   border: 0;

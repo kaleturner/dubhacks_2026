@@ -292,6 +292,8 @@ _WARM: dict[tuple[str, str], SessionClient] = {}
 _WARM_LOCK = threading.Lock()  # guards the two dicts; each key's own lock covers its slow open
 _KEY_LOCKS: dict[tuple[str, str], threading.Lock] = {}
 SESSION_REUSE_S = 5 * 3600  # grants last 6 h
+GRANT_RETRIES = 6
+GRANT_RETRY_S = 10.0
 
 
 def warm_session(instruction: str) -> SessionClient:
@@ -305,11 +307,29 @@ def warm_session(instruction: str) -> SessionClient:
     with key_lock:
         session = _WARM.get(key)
         if session is None or time.monotonic() - session.opened_at > SESSION_REUSE_S:
-            session = SessionClient(deployment_id, instruction)
-            session.open()
+            for attempt in range(GRANT_RETRIES):
+                session = SessionClient(deployment_id, instruction)
+                try:
+                    session.open()
+                    break
+                except ApiError as exc:
+                    # 409 deployment_recovering: the service is restarting the assignment.
+                    if "409" not in str(exc) or attempt == GRANT_RETRIES - 1:
+                        raise
+                    print(f"[vla] deployment recovering, retrying the grant in {GRANT_RETRY_S:.0f} s")
+                    time.sleep(GRANT_RETRY_S)
             with _WARM_LOCK:
                 _WARM[key] = session
         return session
+
+
+def close_warm_sessions() -> None:
+    """Delete every warm session; call on shutdown so restarts do not pile up open sessions."""
+    with _WARM_LOCK:
+        sessions = list(_WARM.values())
+        _WARM.clear()
+    for session in sessions:
+        session.close()
 
 
 def _forget(session: SessionClient) -> None:

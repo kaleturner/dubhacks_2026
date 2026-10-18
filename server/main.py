@@ -90,6 +90,10 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        if USE_VLA:
+            from robot.vla_client import close_warm_sessions
+
+            close_warm_sessions()
         try:
             wrist.stop_recording()
         except Exception:

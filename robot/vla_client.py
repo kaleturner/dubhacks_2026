@@ -45,6 +45,7 @@ from shared.robotics_api import BASE_URL, USER_AGENT, Api, ApiError, read_key
 
 DEFAULT_PROFILE = {"fps": 30, "execution_stride": 15, "max_prefix": 12, "deadline_ms": 400}
 MAX_CONSECUTIVE_FAILURES = 5
+LATENCY_MARGIN_TICKS = 2  # ask for a little more committed prefix than the average reply takes
 
 
 class InferenceError(ApiError):
@@ -103,6 +104,7 @@ class Player:
         self.queued: Chunk | None = None
         self.latency_ticks = 5.0  # training used delays 1-12 with mean 5
         self.dropped = 0
+        self.late_switches = 0
 
     def should_request(self, tick: int) -> bool:
         newest = self.queued or self.active  # a chunk waiting to take over counts as the newest
@@ -111,7 +113,7 @@ class Player:
         return tick - newest.anchor >= self.stride
 
     def delay(self) -> int:
-        return int(min(self.max_prefix, max(1, math.ceil(self.latency_ticks))))
+        return int(min(self.max_prefix, max(1, math.ceil(self.latency_ticks + LATENCY_MARGIN_TICKS))))
 
     def make_rtc(self, tick: int) -> dict | None:
         if self.active is None:
@@ -135,8 +137,14 @@ class Player:
             return False
         chunk.anchor = request_tick
         if self.active is not None and request_tick + chunk.execute_from < arrival_tick:
-            self.dropped += 1  # the switch point is already behind us
-            return False
+            # In time, but past its planned switch row. Dropping it left the old chunk to run
+            # out, every later request then went without RTC, and every reply was dropped in
+            # turn. Take over now instead, at the row that belongs to this tick.
+            if arrival_tick - request_tick >= len(chunk.rows):
+                self.dropped += 1
+                return False
+            chunk.execute_from = arrival_tick - request_tick
+            self.late_switches += 1
         if self.active is None:
             chunk.execute_from = 0
         self.queued = chunk

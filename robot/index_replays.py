@@ -41,9 +41,9 @@ def object_of(episode: int) -> str:
     return next((name for name, eps in OBJECTS.items() if episode in eps), "object")
 
 
-def side_frame(dataset: Path, episodes: "pa.Table", episode: int, out: Path) -> None:
+def side_frame(dataset: Path, episodes: "pa.Table", episode: int, out: Path, camera: str = "side") -> None:
     row = episodes.filter(pa.compute.equal(episodes["episode_index"], episode)).to_pylist()[0]
-    key = "videos/observation.images.side"
+    key = f"videos/observation.images.{camera}"
     video = dataset / key / f"chunk-{row[key + '/chunk_index']:03d}" / f"file-{row[key + '/file_index']:03d}.mp4"
     start = row[key + "/from_timestamp"] + SEEK_S
     subprocess.run(
@@ -74,17 +74,22 @@ def main() -> int:
 
     tmp = Path(tempfile.mkdtemp(prefix="index_replays_"))
 
-    def place(episode: int) -> tuple[int, list[float] | None]:
-        frame = tmp / f"ep{episode}.jpg"
-        side_frame(dataset, meta, episode, frame)
+    def place(episode: int, camera: str) -> list[float] | None:
+        frame = tmp / f"ep{episode}_{camera}.jpg"
+        side_frame(dataset, meta, episode, frame, camera)
         found = locate(str(frame), object_of(episode))
-        return episode, ([round(v, 1) for v in found["center"]] if found["found"] else None)
+        time.sleep(PAUSE_S)
+        return [round(v, 1) for v in found["center"]] if found["found"] else None
 
     # One request at a time with a pause: parallel calls got this IP rate-limited (Cloudflare 1015).
-    placed = {}
+    # side: object center in C920 pixels. wrist: object center as a fraction of the wrist
+    # frame at the take's first pose; the wrist camera rides on the arm, so this survives
+    # moving the C920 or the whole setup.
+    placed, wrist = {}, {}
     for episode in sorted({int(e) for e in episode_col}):
-        placed.update([place(episode)])
-        time.sleep(PAUSE_S)
+        placed[episode] = place(episode, "side")
+        center = place(episode, "wrist")
+        wrist[episode] = None if center is None else [round(center[0] / 640, 4), round(center[1] / 480, 4)]
 
     REPLAY_DIR.mkdir(exist_ok=True)
     for index, text in sorted(tasks.items()):
@@ -94,8 +99,8 @@ def main() -> int:
             continue
         takes = []
         for ep in sorted({int(e) for e in episode_col[task_col == index]}):
-            if placed[ep] is None:
-                print(f"{name} episode {ep}: {object_of(ep)} not found in the side view, left out")
+            if placed[ep] is None and wrist[ep] is None:
+                print(f"{name} episode {ep}: {object_of(ep)} not found in either view, left out")
                 continue
             rows = actions[episode_col == ep]
             takes.append(
@@ -103,6 +108,7 @@ def main() -> int:
                     "episode": ep,
                     "object": object_of(ep),
                     "side_xy": placed[ep],
+                    "wrist_xy": wrist[ep],
                     "actions": [[round(float(v), 2) for v in row] for row in rows],
                 }
             )

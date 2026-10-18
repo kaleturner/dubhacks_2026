@@ -52,12 +52,32 @@ def save_pose(name: str, joints: list[float]) -> None:
     POSES[name] = list(saved[name])
 
 
-def load_replay(task: str, near: list[float] | None = None) -> dict:
-    """The task's replay. With `near` (object center in the side view, pixels) and a
-    robot/replays/<task>_all.json index, the take whose object sat closest instead."""
+def load_replay(task: str, near: list[float] | None = None, wrist: dict | None = None) -> dict:
+    """The task's replay, or with an index (robot/replays/<task>_all.json) the take whose
+    object sat closest to the current one.
+
+    wrist: {"xy": object center as a frame fraction, "q": joints when it was seen,
+    "jacobian": 2x2 image motion per degree of pan, flex}. Each take's recorded wrist_xy
+    is compared with where the object would appear from that take's first pose. The
+    wrist camera rides on the arm, so this survives moving the C920.
+    near: object center in side-view pixels, used when wrist is not given.
+    """
     index = REPLAY_DIR / f"{task}_all.json"
+    if wrist is not None and index.is_file():
+        takes = [t for t in json.loads(index.read_text())["takes"] if t.get("wrist_xy")]
+        if takes:
+            xy, q, jac = wrist["xy"], wrist["q"], wrist["jacobian"]
+
+            def miss(take: dict) -> float:
+                dq = (take["actions"][0][0] - q[0], take["actions"][0][3] - q[3])
+                px = xy[0] + jac[0][0] * dq[0] + jac[0][1] * dq[1]
+                py = xy[1] + jac[1][0] * dq[0] + jac[1][1] * dq[1]
+                return (px - take["wrist_xy"][0]) ** 2 + (py - take["wrist_xy"][1]) ** 2
+
+            best = min(takes, key=miss)
+            return {"task": task, "episode": best["episode"], "miss": round(miss(best) ** 0.5, 3), "actions": best["actions"]}
     if near is not None and index.is_file():
-        takes = json.loads(index.read_text())["takes"]
+        takes = [t for t in json.loads(index.read_text())["takes"] if t.get("side_xy")]
         if takes:
             best = min(takes, key=lambda t: (t["side_xy"][0] - near[0]) ** 2 + (t["side_xy"][1] - near[1]) ** 2)
             return {"task": task, "episode": best["episode"], "object_side_xy": best["side_xy"], "actions": best["actions"]}

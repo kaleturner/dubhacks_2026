@@ -146,3 +146,15 @@ def test_replay_picks_take_nearest_the_object(tmp_path, monkeypatch):
     assert poses.load_replay("zoom", near=[380, 260])["episode"] == 9
     assert poses.load_replay("zoom", near=[90, 310])["episode"] == 3
     assert poses.load_replay("zoom")["actions"][0][0] == 5
+
+
+def test_commands_are_kept_off_the_table():
+    from robot.safety import FLOOR_Z, lowest_z
+
+    arm, robot = make_arm()
+    # Rest pose with the shoulder pushed down past where the tip meets the table.
+    low = [-4.0, -70.0, 96.0, 60.0, -92.0, 50.0]
+    assert lowest_z(low) < FLOOR_Z
+    arm.send_joints(low)
+    assert lowest_z(robot.sent[-1]) >= FLOOR_Z
+    assert arm.floor_lifts == 1

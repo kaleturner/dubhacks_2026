@@ -176,7 +176,7 @@ def test_open_uses_tokens_not_team_key_and_walkthrough_paths():
     assert url == "https://ep.example/deployments/dep1/sessions"
     assert headers["Authorization"] == "Bearer APP" and headers["Modal-Authorization"] == "Bearer MOD"
     assert kw["json"] == {"instruction": "do the thing", "contract_id": "c" * 64, "rtc_enabled": True}
-    assert s.api.calls[2][2] == {"session_id": s.session_id, "ttl_seconds": 21600}
+    assert s.api.calls[2][2] == {"session_id": s.session_id, "ttl_seconds": 1800}
 
 
 def test_falls_back_to_v1_inference_paths_and_remembers():

@@ -193,7 +193,7 @@ class SessionClient:
         grant = api.call(
             "POST",
             f"/v1/deployments/{self.deployment_id}/sessions",
-            body={"session_id": self.session_id, "ttl_seconds": 21600},
+            body={"session_id": self.session_id, "ttl_seconds": SESSION_TTL_S},
         )
         self.endpoint = str(grant.get("endpoint_url") or BASE_URL).rstrip("/")
         self.headers = {
@@ -291,7 +291,10 @@ class _Flight:
 _WARM: dict[tuple[str, str], SessionClient] = {}
 _WARM_LOCK = threading.Lock()  # guards the two dicts; each key's own lock covers its slow open
 _KEY_LOCKS: dict[tuple[str, str], threading.Lock] = {}
-SESSION_REUSE_S = 5 * 3600  # grants last 6 h
+# 30 min, not the 6 h maximum: sessions orphaned by a killed server stayed assigned for hours,
+# and the deployment went into deployment_recovering after a night of restarts.
+SESSION_TTL_S = 1800
+SESSION_REUSE_S = SESSION_TTL_S - 300
 GRANT_RETRIES = 6
 GRANT_RETRY_S = 10.0
 

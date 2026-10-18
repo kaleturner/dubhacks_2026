@@ -3,6 +3,7 @@
   WS   /ws
   GET  /media/{file}
   POST /transcribe                        audio → {"text": "..."}
+  GET  /dashboard, /debug/*               live debug view (server/dashboard.py)
 
 Run from the repo root:
 
@@ -32,6 +33,8 @@ from server.config import (
     USE_VLA,
     WRIST_CAM_INDEX,
 )
+from server.dashboard import message_log, remember
+from server.dashboard import router as dashboard_router
 from server.orchestrator import JobGate, Orchestrator
 
 
@@ -70,6 +73,7 @@ async def lifespan(app: FastAPI):
     app.state.wrist = wrist
     app.state.perception = perception
     app.state.gate = JobGate()
+    app.state.messages = message_log()
     try:
         yield
     finally:
@@ -93,6 +97,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(dashboard_router)
 
 
 @app.get("/health")
@@ -111,8 +116,14 @@ async def transcribe(file: UploadFile = File(...)) -> dict:
 @app.websocket("/ws")
 async def ws(websocket: WebSocket) -> None:
     await websocket.accept()
+    messages = websocket.app.state.messages
+
+    async def send(message: dict) -> None:
+        remember(messages, message)
+        await websocket.send_json(message)
+
     orchestrator = Orchestrator(
-        websocket.send_json,
+        send,
         websocket.app.state.arm,
         websocket.app.state.side,
         websocket.app.state.wrist,

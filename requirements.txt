@@ -7,3 +7,4 @@ python-multipart
 opencv-python
 numpy
 pytest
+anthropic>=1.15

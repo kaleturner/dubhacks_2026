@@ -1,9 +1,9 @@
-const API_URL = import.meta.env.VITE_API_URL || "";
+import { apiOrigin } from "./server.js";
 
 export function mediaUrl(path) {
   if (!path) return "";
   if (path.startsWith("http")) return path;
-  return `${API_URL}${path}`;
+  return `${apiOrigin()}${path}`;
 }
 
 function audioName(type) {
@@ -16,7 +16,7 @@ function audioName(type) {
 export async function transcribe(blob) {
   const body = new FormData();
   body.append("file", blob, audioName(blob.type || ""));
-  const response = await fetch(`${API_URL}/transcribe`, { method: "POST", body });
+  const response = await fetch(`${apiOrigin()}/transcribe`, { method: "POST", body });
   if (!response.ok) {
     let detail = "transcription failed";
     try {

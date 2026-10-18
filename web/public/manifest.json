@@ -1,7 +1,7 @@
 {
   "name": "Cinematic Recorder",
   "short_name": "Recorder",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#11130f",
   "theme_color": "#11130f"

@@ -1,13 +1,8 @@
-function socketUrl() {
-  if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL;
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/ws`;
-}
-
-const WS_URL = socketUrl();
+import { wsUrl } from "./server.js";
 
 export function connectJob(text, handlers) {
-  const ws = new WebSocket(WS_URL);
+  const url = wsUrl();
+  const ws = new WebSocket(url);
   let finished = false;
   let closedByClient = false;
 
@@ -21,7 +16,7 @@ export function connectJob(text, handlers) {
     ws.send(JSON.stringify({ type: "prompt", text }));
   };
   ws.onerror = () => {
-    fail(`cannot reach ${WS_URL}`);
+    fail(`cannot reach ${url}`);
   };
   ws.onclose = () => {
     fail("connection closed");

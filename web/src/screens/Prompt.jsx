@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { transcribe } from "../api.js";
+import { pagesMode, parseOrigin, savedServer, saveServer } from "../server.js";
 import { listenForPrompt } from "../voice.js";
 
 const EMPTY_TRANSCRIPT = "no words came back; type the prompt instead";
@@ -9,7 +10,10 @@ export default function PromptScreen({ onSubmit }) {
   const [hint, setHint] = useState("");
   const [listening, setListening] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [server, setServer] = useState(() => savedServer());
   const session = useRef(null);
+  const needsServer = pagesMode();
+  const serverReady = !needsServer || Boolean(parseOrigin(server));
 
   async function onMic() {
     if (session.current) {
@@ -26,6 +30,10 @@ export default function PromptScreen({ onSubmit }) {
       setListening(false);
       let words = heard.text || "";
       if (!words && heard.blob && heard.blob.size) {
+        if (!serverReady) {
+          setHint("add the robot server, then try the mic again");
+          return;
+        }
         setBusy(true);
         setHint("transcribing");
         words = await transcribe(heard.blob);
@@ -48,12 +56,26 @@ export default function PromptScreen({ onSubmit }) {
   return (
     <section>
       <h1>What should we film?</h1>
+      {needsServer && (
+        <input
+          className="server"
+          type="url"
+          inputMode="url"
+          placeholder="https://your-tunnel.trycloudflare.com"
+          aria-label="Robot server"
+          value={server}
+          onChange={(event) => {
+            setServer(event.target.value);
+            saveServer(event.target.value);
+          }}
+        />
+      )}
       <textarea value={text} onChange={(event) => setText(event.target.value)} rows={4} />
       <div className="row">
         <button type="button" className="ghost" onClick={onMic} disabled={busy}>
           {listening ? "Stop" : "Mic"}
         </button>
-        <button type="button" onClick={() => onSubmit(text.trim())} disabled={!text.trim() || listening || busy}>
+        <button type="button" onClick={() => onSubmit(text.trim())} disabled={!text.trim() || listening || busy || !serverReady}>
           Start
         </button>
       </div>

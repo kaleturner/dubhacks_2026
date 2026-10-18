@@ -30,7 +30,7 @@ h1 {
   color: #c6b48a;
 }
 
-textarea {
+textarea, input.server {
   width: 100%;
   border: 0;
   border-radius: 1rem;
@@ -39,6 +39,8 @@ textarea {
   background: #1d2118;
   color: inherit;
 }
+
+input.server { margin: 0 0 0.75rem; }
 
 .row {
   display: flex;

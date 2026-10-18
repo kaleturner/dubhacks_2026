@@ -84,9 +84,16 @@ async def lifespan(app: FastAPI):
 
         from shared.constants import SHOTS
 
-        for spec in SHOTS.values():
-            if spec.get("enabled") and spec.get("vla_prompt"):
-                threading.Thread(target=arm.warm_vla, args=(spec["vla_prompt"],), daemon=True).start()
+        def warm_all() -> None:
+            # One grant at a time: bursts of parallel grants preceded deployment_recovering.
+            for spec in SHOTS.values():
+                if spec.get("enabled") and spec.get("vla_prompt"):
+                    try:
+                        arm.warm_vla(spec["vla_prompt"])
+                    except Exception as exc:
+                        print(f"[vla] warming {spec['vla_prompt']!r} failed: {exc}")
+
+        threading.Thread(target=warm_all, daemon=True).start()
     try:
         yield
     finally:

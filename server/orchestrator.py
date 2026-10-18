@@ -117,10 +117,10 @@ class Orchestrator:
 
     async def _run(self, text: str, job_id: str) -> None:
         if self.use_vla and hasattr(self.arm, "warm_vla"):
-            # Open every shot's policy session in the background while we parse and scout.
-            for spec in self.registry.values():
-                if spec.get("enabled") and spec.get("vla_prompt"):
-                    asyncio.create_task(asyncio.to_thread(self._warm_quietly, spec["vla_prompt"]))
+            # Open every shot's policy session in the background while we parse and scout,
+            # one grant at a time (bursts of parallel grants preceded deployment_recovering).
+            prompts = [s["vla_prompt"] for s in self.registry.values() if s.get("enabled") and s.get("vla_prompt")]
+            asyncio.create_task(asyncio.to_thread(lambda: [self._warm_quietly(p) for p in prompts]))
         intent = await self._parse(text)
         if intent is None:
             return

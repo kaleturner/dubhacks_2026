@@ -23,6 +23,8 @@ class StatusMessage(BaseModel):
     type: Literal["status"]
     stage: Stage
     detail: str
+    stills: list[str] | None = None
+    best_idx: int | None = None
 
 
 class ResultMessage(BaseModel):

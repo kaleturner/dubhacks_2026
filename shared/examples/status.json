@@ -1,1 +1,13 @@
-{ "type": "status", "stage": "SCOUT", "detail": "moving to scout_2" }
+{
+  "type": "status",
+  "stage": "PLAN",
+  "detail": "best angle 2, move orbit",
+  "stills": [
+    "/media/j1_pose_0.jpg",
+    "/media/j1_pose_1.jpg",
+    "/media/j1_pose_2.jpg",
+    "/media/j1_pose_3.jpg",
+    "/media/j1_pose_4.jpg"
+  ],
+  "best_idx": 2
+}

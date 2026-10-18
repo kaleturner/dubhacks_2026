@@ -14,7 +14,7 @@ body {
 main {
   max-width: 28rem;
   margin: 0 auto;
-  padding: 1.5rem 1.25rem 3rem;
+  padding: 1.5rem 1.25rem calc(3rem + env(safe-area-inset-bottom));
 }
 
 h1 {
@@ -83,6 +83,23 @@ button:disabled { opacity: 0.4; }
 
 .steps li.on { color: #f4f1ea; font-weight: 700; }
 .steps li.done { color: #c6b48a; }
+
+.stills {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  margin: 0 0 1rem;
+}
+
+.stills img {
+  width: 4.5rem;
+  height: 3.4rem;
+  object-fit: cover;
+  border-radius: 0.5rem;
+  border: 2px solid transparent;
+}
+
+.stills img.best { border-color: #e7d7a8; }
 
 video {
   width: 100%;

@@ -11,8 +11,10 @@ WebSocket: `wss://<PUBLIC_URL>/ws` (plain `ws://` on localhost). JSON text frame
 | Direction | Message |
 |---|---|
 | phone → server | `{"type":"prompt","text":"record a 15 second video of this apple"}` |
-| server → phone | `{"type":"status","stage":"PARSE"\|"LOCATE"\|"SCOUT"\|"PLAN"\|"RECORD"\|"POST"\|"DONE"\|"ERROR","detail":"..."}` |
+| server → phone | `{"type":"status","stage":"PARSE"\|"LOCATE"\|"SCOUT"\|"PLAN"\|"RECORD"\|"POST"\|"DONE"\|"ERROR","detail":"...","stills":["/media/j1_pose_0.jpg"],"best_idx":2}` |
 | server → phone | `{"type":"result","job_id":"j1","url":"/media/j1_final.mp4","duration_s":15}` |
+
+`stills` and `best_idx` are optional. `stills` is the scout JPEGs under `/media`, sent with each SCOUT status after that still is saved and again on PLAN. `best_idx` is sent on PLAN.
 
 REST:
 

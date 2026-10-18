@@ -27,7 +27,7 @@ async def main() -> None:
         await ws.send(json.dumps({"type": "prompt", "text": args.text}))
         try:
             while True:
-                raw = await asyncio.wait_for(ws.recv(), timeout=10)
+                raw = await asyncio.wait_for(ws.recv(), timeout=90)
                 print(raw)
                 message = json.loads(raw)
                 if message.get("type") == "result":

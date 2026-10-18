@@ -7,8 +7,12 @@ Team board for humans and coding agents. Read this, `PLAN.md`, `CONTRACTS.md`, a
 - Repo skeleton is in. Workshop notes are in `WORKSHOP.md`. Isaac 0.5 drives the arm. Mk1.5 does perception.
 - Critical path: orbit demos on the arm. Same task sentence every episode. Dataset must reach `ready` before the 1,000-update job. Quota is two successful jobs, so plan the 10k run as the second one.
 - **Pivot: no phone in the gripper.** The wrist camera films (`robot/cameras.py`), the C920 is the side camera, the phone is only the remote. Phone capture messages and upload routes are gone.
-- Open decisions: tunnel tool (cloudflared or ngrok), who publishes `PUBLIC_URL`, the measured `GRIPPER_HOLD`, and the camera indexes.
-- Blockers: none.
+- Backend orchestrator runs PARSE → DONE on MockArm and MockCamera when perception is mocked. `ml.trim.trim_clip` writes an H.264 `{job}_final.mp4`. Status messages may include `stills` and `best_idx`.
+- Real Mk1.5 is on for this checkout: `USE_MOCK_PERCEPTION=0`, arm and cameras still mocked. `parse_intent`, `locate`, and `score_angles` are tuned on nine circuit-board photos. A grey mock frame returns “not in frame.” `best_window` still falls back to `start_s=0.5`.
+- `PUBLIC_URL` is `https://behaviour-alphabetical-consecutive-wife.trycloudflare.com` (Cloudflare quick tunnel to port 8000). It serves the built phone app, `/ws`, and `/media` on that one origin, and stays up only while `cloudflared` is running. `npm run dev` talks to `ws://localhost:8000/ws`.
+- `POST /transcribe` is still an empty string. Mic records and posts when speech recognition is missing.
+- Open decisions: the measured `GRIPPER_HOLD`, and the camera indexes.
+- Blockers: none for the mock loop or for Mk1.5 on stills. The real arm, the orbit demos, and speech-to-text are still open.
 
 ## Tracks
 
@@ -76,3 +80,8 @@ Append a row. Newest at the bottom.
 | Sat kickoff | skeleton | Contracts frozen. MockArm, mock perception, FastAPI routes, and the phone mock WS are in. |
 | Sat workshop | notes | Isaac 0.5 is the arm policy. Mk1.5 is perception. Joint names and the predict/RTC loop are in WORKSHOP.md. |
 | Sat afternoon | pivot | Phone out of the gripper. Wrist cam films via `robot/cameras.py`; C920 is side. Removed capture_still/start_recording/stop_recording and /upload routes. `PHONE_GRIPPER_HOLD` → `GRIPPER_HOLD`. |
+| Sat 4:30 PM | backend | Orchestrator runs PARSE → RECORD on mocks. POST calls `ml.trim.trim_clip` and stops at ERROR until ML lands it. `PUBLIC_URL` is `https://behaviour-alphabetical-consecutive-wife.trycloudflare.com`. |
+| Sat 4:50 PM | frontend | Prompt, status, and result click through on the mock socket. Mic falls back to `POST /transcribe`. Share is hidden unless the browser can share. Error returns to the prompt. |
+| Sat 5:15 PM | backend | Mock job reaches DONE. Trim writes H.264. Scout stills and `best_idx` ride on the status message. The tunnel origin serves the built phone app. |
+| Sat 6:15 PM | backend | Real Mk1.5 parses, locates, and scores. Boxes convert from the 0–1000 grid to pixels. Tuned on nine circuit-board photos. A mock-arm job parses the prompt and rejects the grey side frame. |
+| Sat 6:40 PM | backend | STATUS.md records the mock loop, the phone on one origin, and real Mk1.5 with the arm still mocked. |

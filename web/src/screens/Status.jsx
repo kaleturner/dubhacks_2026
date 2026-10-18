@@ -1,6 +1,8 @@
+import { mediaUrl } from "../api.js";
+
 const STAGES = ["PARSE", "LOCATE", "SCOUT", "PLAN", "RECORD", "POST", "DONE"];
 
-export default function StatusScreen({ stage, detail, error }) {
+export default function StatusScreen({ stage, detail, error, onBack, stills = [], bestIdx = null }) {
   const active = STAGES.indexOf(stage);
   return (
     <section>
@@ -12,7 +14,26 @@ export default function StatusScreen({ stage, detail, error }) {
           </li>
         ))}
       </ol>
+      {stills.length > 0 && (
+        <div className="stills">
+          {stills.map((url, index) => (
+            <img
+              key={url}
+              src={mediaUrl(url)}
+              alt={`scout ${index}`}
+              className={index === bestIdx ? "best" : ""}
+            />
+          ))}
+        </div>
+      )}
       <p className="hint">{detail}</p>
+      {error && (
+        <div className="row">
+          <button type="button" onClick={onBack}>
+            Back
+          </button>
+        </div>
+      )}
     </section>
   );
 }

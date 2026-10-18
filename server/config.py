@@ -18,3 +18,18 @@ PUBLIC_URL = os.getenv("PUBLIC_URL", "")
 SIDE_CAM_INDEX = int(os.getenv("SIDE_CAM_INDEX", "0"))
 WRIST_CAM_INDEX = int(os.getenv("WRIST_CAM_INDEX", "1"))
 USE_MOCKS = os.getenv("USE_MOCKS", "1") == "1"
+
+
+def _flag(name: str, default: bool) -> bool:
+    """Unset or blank follows the default. Anything else is on only when the value is 1."""
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip() == "1"
+
+
+# Optional overrides. Unset means follow USE_MOCKS, so a real-perception /
+# mock-arm checkpoint does not turn the cameras or the arm on.
+USE_MOCK_ARM = _flag("USE_MOCK_ARM", USE_MOCKS)
+USE_MOCK_PERCEPTION = _flag("USE_MOCK_PERCEPTION", USE_MOCKS)
+USE_MOCK_CAMERAS = _flag("USE_MOCK_CAMERAS", USE_MOCKS)

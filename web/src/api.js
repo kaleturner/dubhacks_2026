@@ -17,7 +17,16 @@ export async function transcribe(blob) {
   const body = new FormData();
   body.append("file", blob, audioName(blob.type || ""));
   const response = await fetch(`${API_URL}/transcribe`, { method: "POST", body });
-  if (!response.ok) throw new Error("transcription failed");
+  if (!response.ok) {
+    let detail = "transcription failed";
+    try {
+      const payload = await response.json();
+      if (typeof payload.detail === "string" && payload.detail) detail = payload.detail;
+    } catch {
+      /* the status line is enough */
+    }
+    throw new Error(detail);
+  }
   const payload = await response.json();
   return payload.text || "";
 }

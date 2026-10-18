@@ -119,6 +119,7 @@ class Orchestrator:
         intent = await self._parse(text)
         if intent is None:
             return
+        self._warm_first_shot(intent)
 
         if not await self._locate(job_id, intent):
             return
@@ -263,6 +264,23 @@ class Orchestrator:
                 await asyncio.sleep(remain)
         finally:
             await asyncio.to_thread(self.wrist.stop_recording)
+
+    def _warm_first_shot(self, intent: Intent) -> None:
+        """Start the first policy shot's session grant now, so its 10-50 s wait overlaps
+        locating and scouting. Still one session: the shot waits on this same grant."""
+        if not (self.use_vla and hasattr(self.arm, "warm_vla")):
+            return
+        for shot in intent.shots:
+            spec = self.registry[shot.task]
+            if spec.get("vla_prompt") and spec.get("engine", "vla") == "vla":
+                def warm(prompt=spec["vla_prompt"]) -> None:
+                    try:
+                        self.arm.warm_vla(prompt)
+                    except Exception as exc:  # the shot opens its own session and reports
+                        log.warning("early grant for %r failed: %s", prompt, exc)
+
+                asyncio.create_task(asyncio.to_thread(warm))
+                return
 
     async def _trim(self, raw_path: Path, clip_path: Path, duration_s: float, film_s: float) -> str:
         start_s = max(0.0, (film_s - duration_s) / 2)  # the middle of the take

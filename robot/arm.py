@@ -7,7 +7,7 @@ Robotics replaces the NotImplemented methods on Arm; keep the method names.
 import time
 
 from robot.poses import SCOUT_POSES, clamp_joints, resolve_pose
-from shared.constants import VLA_TASK_PROMPT
+from shared.constants import SHOTS
 
 __all__ = ["Arm", "MockArm", "SCOUT_POSES"]
 
@@ -26,11 +26,11 @@ class Arm:
         raise NotImplementedError
 
     def run_scripted(self, move: str, duration_s: float) -> None:
-        """One of "push_in", "hero_rise", "orbit_scripted"."""
+        """One of shared.constants.SCRIPTED_MOVES: "zoom", "pan_out", "overhead"."""
         raise NotImplementedError
 
     def run_vla(self, instruction: str, duration_s: float) -> None:
-        """Isaac orbit via the Robotics API. See robot/vla_client.py."""
+        """Run the fine-tuned policy on one task sentence (SHOTS[task]["vla_prompt"]). See robot/vla_client.py."""
         raise NotImplementedError
 
     def stop(self) -> None:
@@ -74,7 +74,7 @@ if __name__ == "__main__":
     arm = MockArm()
     arm.connect()
     arm.move_to("scout_0", 1.0)
-    arm.run_scripted("push_in", 2.0)
-    arm.run_vla(VLA_TASK_PROMPT, 3.0)
+    arm.run_scripted("zoom", 2.0)
+    arm.run_vla(SHOTS["zoom"]["vla_prompt"], 3.0)
     arm.stop()
     print(arm.get_state())

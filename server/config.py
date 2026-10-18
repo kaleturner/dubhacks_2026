@@ -33,3 +33,7 @@ def _flag(name: str, default: bool) -> bool:
 USE_MOCK_ARM = _flag("USE_MOCK_ARM", USE_MOCKS)
 USE_MOCK_PERCEPTION = _flag("USE_MOCK_PERCEPTION", USE_MOCKS)
 USE_MOCK_CAMERAS = _flag("USE_MOCK_CAMERAS", USE_MOCKS)
+
+# Run the fine-tuned policy for each shot. Off means every shot uses its scripted
+# fallback. Defaults on only when the arm is real and a deployment exists.
+USE_VLA = _flag("USE_VLA", not USE_MOCK_ARM and bool(DEPLOYMENT_ID))

@@ -1,7 +1,9 @@
-"""Register orbit demos and start an Isaac 0.5 fine-tune.
+"""Register zoom demos and start an Isaac 0.5 fine-tune.
 
 Demos are recorded with nothing in the gripper, at GRIPPER_HOLD, with the
-wrist camera kept on the apple the whole orbit. That shot is the product.
+wrist camera kept on the apple the whole zoom. That shot is the product. Every episode carries the one
+sentence in shared.constants.SHOTS["zoom"]["vla_prompt"]; more tasks later
+means more sentences in the same dataset and a new run.
 
 Prefer a public Hugging Face repo. Direct upload is reserve → PUT signed
 URLs (no team key) → finalize, then poll until the dataset state is ready.
@@ -20,9 +22,9 @@ import argparse
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Upload orbit demos and start an Isaac fine-tune.")
+    parser = argparse.ArgumentParser(description="Upload zoom demos and start an Isaac fine-tune.")
     parser.add_argument("--steps", type=int, required=True, help="1000 for the check, 10000 only if capabilities and quota allow")
-    parser.add_argument("--dataset", default="orbit-apple")
+    parser.add_argument("--dataset", default="zoom-apple")
     args = parser.parse_args()
     raise SystemExit(
         "Not implemented. "

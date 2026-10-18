@@ -29,6 +29,7 @@ from server.config import (
     USE_MOCK_CAMERAS,
     USE_MOCK_PERCEPTION,
     USE_MOCKS,
+    USE_VLA,
     WRIST_CAM_INDEX,
 )
 from server.orchestrator import JobGate, Orchestrator
@@ -117,6 +118,7 @@ async def ws(websocket: WebSocket) -> None:
         websocket.app.state.wrist,
         websocket.app.state.perception,
         websocket.app.state.gate,
+        use_vla=USE_VLA,
     )
     try:
         while True:

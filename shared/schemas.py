@@ -8,10 +8,9 @@ example JSON, and CONTRACTS.md in the same change.
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 Stage = Literal["PARSE", "LOCATE", "SCOUT", "PLAN", "RECORD", "POST", "DONE", "ERROR"]
-IntentMove = Literal["orbit", "push_in", "hero_rise"]
 
 
 class PromptMessage(BaseModel):
@@ -27,18 +26,34 @@ class StatusMessage(BaseModel):
     best_idx: int | None = None
 
 
+class Shot(BaseModel):
+    task: str
+    duration_s: float = Field(gt=0, le=30)
+
+
 class ResultMessage(BaseModel):
     type: Literal["result"]
     job_id: str
     url: str
     duration_s: float
+    shots: list[Shot] | None = None
 
 
 class Intent(BaseModel):
     object: str
-    duration_s: float = Field(gt=0, le=30)
-    move: IntentMove
     style: str
+    shots: list[Shot] = Field(min_length=1, max_length=3)
+    note: str | None = None
+
+    @property
+    def duration_s(self) -> float:
+        return round(sum(shot.duration_s for shot in self.shots), 2)
+
+    @model_validator(mode="after")
+    def _total_within_limit(self) -> "Intent":
+        if self.duration_s > 30.001:
+            raise ValueError("shots add up to more than 30 seconds")
+        return self
 
 
 class LocateResult(BaseModel):

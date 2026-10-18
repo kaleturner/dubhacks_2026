@@ -21,9 +21,11 @@ POSES: dict[str, list[float] | None] = {
     "scout_2": None,
     "scout_3": None,
     "scout_4": None,
-    "push_in_start": None,
-    "push_in_end": None,
-    "hero_top": None,
+    "zoom_start": None,
+    "zoom_in": None,
+    "pan_start": None,
+    "pan_end": None,
+    "overhead_start": None,
 }
 
 SCOUT_POSES = ["scout_0", "scout_1", "scout_2", "scout_3", "scout_4"]

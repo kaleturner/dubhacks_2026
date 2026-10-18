@@ -1,6 +1,6 @@
-"""Isaac 0.5 client for the orbit policy.
+"""Isaac 0.5 client for the shot policy (phase 1: zoom).
 
-Backend calls Arm.run_vla, which should call run_orbit once this exists.
+Backend calls Arm.run_vla, which should call run_task once this exists.
 The call sequence is in WORKSHOP.md. Short version:
 
   grant  POST /v1/deployments/{id}/sessions          team key, ttl 21600
@@ -18,10 +18,8 @@ Actions are already in robot units. Replace only the gripper with
 GRIPPER_HOLD. Do not rescale the other joints.
 """
 
-from shared.constants import VLA_TASK_PROMPT
-
-
-def run_orbit(duration_s: float, instruction: str = VLA_TASK_PROMPT) -> None:
-    """Blocking orbit. One instruction per session, the recorded sentence."""
+def run_task(instruction: str, duration_s: float) -> None:
+    """Blocking run of one task. One instruction per session: open a session with the
+    sentence from shared.constants.SHOTS[task]["vla_prompt"], run, then delete it."""
     del duration_s, instruction
     raise NotImplementedError

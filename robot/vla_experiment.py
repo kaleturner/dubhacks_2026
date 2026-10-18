@@ -21,7 +21,7 @@ from robot.arm import Arm
 from robot.cameras import Camera
 from robot.claude_director import ENVELOPE
 from robot.poses import load_replay, resolve_pose
-from robot.vla_client import close_warm_sessions, run_task
+from robot.vla_client import close_warm_sessions, run_task, warm_session
 
 OUT_DIR = Path(__file__).resolve().parents[1] / "server" / "media" / "experiments"
 NAMES = ("pan", "lift", "elbow", "tilt", "roll")
@@ -49,7 +49,11 @@ class EnvelopeArm(Arm):
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("instruction")
-    parser.add_argument("--start", default="home", help="home, or zoom / overhead / sweep for that shot's start pose")
+    parser.add_argument(
+        "--start",
+        default="home",
+        help="home; zoom / overhead / sweep for that shot's start pose; or e.g. sweep@3.5 for the pose 3.5 s into it",
+    )
     parser.add_argument("--seconds", type=float, default=12.0)
     parser.add_argument("--tag", default="")
     args = parser.parse_args()
@@ -57,7 +61,14 @@ def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     slug = "".join(c if c.isalnum() else "_" for c in args.instruction.lower())[:40].strip("_")
     clip = OUT_DIR / f"{time.strftime('%H%M%S')}_{slug}{'_' + args.tag if args.tag else ''}.mp4"
-    start = resolve_pose("home") if args.start == "home" else load_replay(args.start)["actions"][0]
+    if args.start == "home":
+        start = resolve_pose("home")
+    else:
+        # A pose from inside a demo gives the policy a state only that task reaches
+        # (sweep@3.5 has the wrist already rolled), not the start pose all tasks share.
+        task, _, at = args.start.partition("@")
+        rows = load_replay(task)["actions"]
+        start = rows[min(len(rows) - 1, int(float(at or 0) * 30))]
 
     side = Camera(int(os.getenv("SIDE_CAM_INDEX", "1")), "side")
     wrist = Camera(int(os.getenv("WRIST_CAM_INDEX", "0")), "wrist")
@@ -66,6 +77,7 @@ def main() -> int:
     arm = EnvelopeArm(side, wrist)
     arm.connect()
     try:
+        warm_session(args.instruction)  # the grant can take 30 s; keep it out of the clip
         arm.move_to(list(start), 2.5)
         wrist.start_recording(str(clip))
         began = time.monotonic()

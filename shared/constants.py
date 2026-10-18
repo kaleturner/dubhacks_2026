@@ -7,17 +7,19 @@
 #   start_pose  robot.poses.POSES key the arm moves to before the shot
 #   order       position in a multi-shot story (establishing first, hero last)
 #   min_s       demos run ~15 s; 10 s keeps a replay at most 1.5x recorded speed
-#   engine      "vla" runs the deployed Isaac policy when USE_VLA is on, "replay" always
-#               replays. Live on the arm the 1k-step policy did a good overhead, but zoom
-#               barely moved and sweep did an overhead instead (it leans on the image more
-#               than the instruction), so those two stay on replays.
+#   engine      "vla" runs the deployed Isaac policy when USE_VLA is on, "replay" always replays
+#   prime_s     seconds of the task's own demo replayed before the policy takes over. From
+#               the shared start pose the 1k-step policy did an overhead for every
+#               instruction; primed into a state only its task reaches it spun (316 deg of
+#               roll) and pushed in and back on the real arm
 #   center      steer the replay to keep the object centered (robot/centering.py). Off for
 #               sweep: its own fast pan into the top-down view wound the loop up and tilted
 #               the camera off the table for the whole roll; picking the take aims it instead
 SHOTS: dict[str, dict] = {
     "zoom": {
         "enabled": True,
-        "engine": "replay",
+        "engine": "vla",
+        "prime_s": 5.0,
         "vla_prompt": "push in toward the object and pull back",
         "scripted": "zoom",
         "start_pose": "zoom_start",
@@ -34,6 +36,7 @@ SHOTS: dict[str, dict] = {
     "overhead": {
         "enabled": True,
         "engine": "vla",
+        "prime_s": 0.0,
         "vla_prompt": "rise up over the object",
         "scripted": "overhead",
         "start_pose": "overhead_start",
@@ -46,7 +49,8 @@ SHOTS: dict[str, dict] = {
     },
     "sweep": {
         "enabled": True,
-        "engine": "replay",
+        "engine": "vla",
+        "prime_s": 3.5,
         "center": False,
         "vla_prompt": "spin the camera above the object",
         "scripted": "sweep",

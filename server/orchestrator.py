@@ -116,15 +116,6 @@ class Orchestrator:
             self.gate.release()
 
     async def _run(self, text: str, job_id: str) -> None:
-        if self.use_vla and hasattr(self.arm, "warm_vla"):
-            # Open every shot's policy session in the background while we parse and scout,
-            # one grant at a time (bursts of parallel grants preceded deployment_recovering).
-            prompts = [
-                s["vla_prompt"]
-                for s in self.registry.values()
-                if s.get("enabled") and s.get("vla_prompt") and s.get("engine", "vla") == "vla"
-            ]
-            asyncio.create_task(asyncio.to_thread(lambda: [self._warm_quietly(p) for p in prompts]))
         intent = await self._parse(text)
         if intent is None:
             return
@@ -259,7 +250,12 @@ class Orchestrator:
         try:
             timeout = film_s + RECORD_SLACK_S
             if self.use_vla and spec.get("vla_prompt") and spec.get("engine", "vla") == "vla":
-                await self._call(timeout, "RECORD", self.arm.run_vla, spec["vla_prompt"], film_s)
+                prime = (spec["scripted"], float(spec.get("prime_s", 0.0)))
+                try:
+                    await self._call(timeout, "RECORD", self.arm.run_vla, spec["vla_prompt"], film_s, *prime)
+                finally:
+                    # The deployment allows only a few open sessions; hold one at a time.
+                    await asyncio.to_thread(self.arm.release_vla, spec["vla_prompt"])
             else:
                 await self._call(timeout, "RECORD", self.arm.run_scripted, spec["scripted"], film_s)
             remain = film_s - (time.monotonic() - started)
@@ -267,12 +263,6 @@ class Orchestrator:
                 await asyncio.sleep(remain)
         finally:
             await asyncio.to_thread(self.wrist.stop_recording)
-
-    def _warm_quietly(self, instruction: str) -> None:
-        try:
-            self.arm.warm_vla(instruction)
-        except Exception as exc:  # the shot itself retries and reports
-            logging.getLogger(__name__).warning("warming %r failed: %s", instruction, exc)
 
     async def _trim(self, raw_path: Path, clip_path: Path, duration_s: float, film_s: float) -> str:
         start_s = max(0.0, (film_s - duration_s) / 2)  # the middle of the take

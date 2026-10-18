@@ -326,6 +326,15 @@ def warm_session(instruction: str) -> SessionClient:
         return session
 
 
+def release_session(instruction: str) -> None:
+    """Close and forget the warm session for one instruction, if any."""
+    deployment_id = os.getenv("DEPLOYMENT_ID", "").strip()
+    with _WARM_LOCK:
+        session = _WARM.pop((deployment_id, instruction), None)
+    if session is not None:
+        session.close()
+
+
 def close_warm_sessions() -> None:
     """Delete every warm session; call on shutdown so restarts do not pile up open sessions."""
     with _WARM_LOCK:

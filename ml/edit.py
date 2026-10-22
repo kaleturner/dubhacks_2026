@@ -20,6 +20,11 @@ import cv2
 import numpy as np
 
 MUSIC_DIR = Path(__file__).resolve().parent / "music"
+# The product often sits low in the wrist frame, right above the jaws. Cropping up to 32%
+# of the height zoomed ~1.6x and cut the ESP32 out of the edit; 15% keeps it in frame and
+# still takes the claw's tips off the bottom.
+CLAW_MAX = 0.15
+
 MUSIC = MUSIC_DIR / "city-loop.mp3"
 CATALOG = Path(__file__).resolve().parents[1] / "shared" / "tracks.json"
 FPS = 30
@@ -28,6 +33,9 @@ _FONTS = (
     "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/TTF/FiraSans-Bold.ttf",
     "/usr/share/fonts/liberation/LiberationSans-Bold.ttf",
+    # macOS, where the server runs next to the arm; without these the title was skipped.
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/Library/Fonts/Arial Bold.ttf",
 )
 
 # Warm the flat wrist picture and lift contrast, on top of the saturation the
@@ -229,7 +237,7 @@ def _crop_window(width: int, height: int, claw: int) -> tuple[int, int, float, f
 
     Returns width, height, x, y, and how far x and y may drift.
     """
-    claw = int(min(max(0, claw), int(height * 0.32)))
+    claw = int(min(max(0, claw), int(height * CLAW_MAX)))
     safe_h = height - claw
     aspect = width / height
     win_h = max(2, int(safe_h * 0.94) // 2 * 2)
@@ -292,7 +300,7 @@ def _claw_rows(frame: np.ndarray) -> int:
     rows = height - int(solid.min()) + margin
     if rows < int(height * 0.03):
         return 0
-    return int(min(rows, height * 0.32))
+    return int(min(rows, height * CLAW_MAX))
 
 
 def _graph(

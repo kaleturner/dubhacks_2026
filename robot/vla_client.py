@@ -3,9 +3,9 @@
 Arm.run_vla calls run_task. The call sequence and the real-time chunk rules are
 in WORKSHOP.md; the endpoints are in https://robotics.perceptron.inc/docs.
 
-  grant   POST /v1/deployments/{id}/sessions          team key, ttl 21600
+  grant   POST /v1/deployments/{id}/sessions          team key, ttl 1800
   open    POST {endpoint}/deployments/{id}/sessions   session tokens, never the team key
-  loop    POST {endpoint}/sessions/{sid}/predict      multipart: metadata + side + wrist PNG
+  loop    POST {endpoint}/sessions/{sid}/predict      multipart: metadata + side + wrist JPEG
   end     DELETE {endpoint}/sessions/{sid}
 
 The docs show two path styles (the curl walkthrough and a /v1/inference/ prefix),
@@ -45,6 +45,7 @@ from shared.robotics_api import BASE_URL, USER_AGENT, Api, ApiError, read_key
 
 DEFAULT_PROFILE = {"fps": 30, "execution_stride": 15, "max_prefix": 12, "deadline_ms": 400}
 MAX_CONSECUTIVE_FAILURES = 5
+JPEG_QUALITY = 75  # the deployment resizes to 448x448; higher quality only adds upload time
 LATENCY_MARGIN_TICKS = 2  # ask for a little more committed prefix than the average reply takes
 
 
@@ -168,13 +169,17 @@ class SessionClient:
         self.deployment_id = deployment_id
         self.instruction = instruction
         self.api = api
-        self.http = http or requests
+        # One kept-alive session: a fresh TLS handshake per predict cost ~100 ms of the 400 ms budget.
+        self.http = http or requests.Session()
         self.session_id = f"robot-{uuid.uuid4().hex[:10]}"
         self.endpoint = ""
         self.headers: dict[str, str] = {}
         self.contract_id = ""
         self.profile = dict(DEFAULT_PROFILE)
         self.sequence = 0
+        self.time_offset = 0.0  # seconds; keeps timestamps increasing when a session runs several shots
+        self.last_timestamp = -1.0
+        self.opened_at = 0.0
         self._style = 0
         self.logged_keys = False
 
@@ -184,11 +189,11 @@ class SessionClient:
         profiles = caps.get("control_profiles") or []
         if profiles:
             self.profile = {**DEFAULT_PROFILE, **profiles[0]}
-        self.contract_id = str(api.call("GET", f"/v1/deployments/{self.deployment_id}/contract")["contract_id"])
+        control_contract = api.call("GET", f"/v1/deployments/{self.deployment_id}/contract")
         grant = api.call(
             "POST",
             f"/v1/deployments/{self.deployment_id}/sessions",
-            body={"session_id": self.session_id, "ttl_seconds": 21600},
+            body={"session_id": self.session_id, "ttl_seconds": SESSION_TTL_S},
         )
         self.endpoint = str(grant.get("endpoint_url") or BASE_URL).rstrip("/")
         self.headers = {
@@ -196,30 +201,40 @@ class SessionClient:
             "Modal-Authorization": f"Bearer {grant['modal_session_token']}",
             "User-Agent": USER_AGENT,
         }
+        # contract_id comes from the inference side's contract, read with the session
+        # credentials; the team-key contract carries only contract_sha256.
+        try:
+            contract = self._send("GET", ["/deployments/{d}/contract", "/v1/inference/deployments/{d}/contract"])
+            self.contract_id = str(contract.get("contract_id") or contract["contract_sha256"])
+        except (InferenceError, KeyError) as exc:
+            print(f"[vla] inference contract unavailable ({exc}); using the control contract hash")
+            self.contract_id = str(control_contract.get("contract_id") or control_contract["contract_sha256"])
         reply = self._send(
             "POST",
             ["/deployments/{d}/sessions", "/v1/inference/deployments/{d}/sessions"],
             json={"instruction": self.instruction, "contract_id": self.contract_id, "rtc_enabled": True},
         )
+        self.opened_at = time.monotonic()
         print(f"[vla] session {self.session_id}, reply keys {sorted(reply)}, paths style {self._style}")
 
-    def predict(self, *, state, side_png, wrist_png, tick, rtc=None) -> Chunk:
+    def predict(self, *, state, side_image, wrist_image, tick, rtc=None) -> Chunk:
         meta = {
             "contract_id": self.contract_id,
             "observation_id": f"{self.session_id}-{self.sequence}",
             "sequence": self.sequence,
-            "timestamp_seconds": tick / self.profile["fps"],
+            "timestamp_seconds": self.time_offset + tick / self.profile["fps"],
             "state": [float(v) for v in state],
-            "image_encoding": "png",
+            "image_encoding": "jpeg",
             "deadline_ms": self.profile["deadline_ms"],
         }
         if rtc is not None:
             meta["rtc"] = rtc
         self.sequence += 1
+        self.last_timestamp = meta["timestamp_seconds"]
         files = {
             "metadata": (None, json.dumps(meta), "application/json"),
-            "side": ("side.png", side_png, "image/png"),
-            "wrist": ("wrist.png", wrist_png, "image/png"),
+            "side": ("side.jpg", side_image, "image/jpeg"),
+            "wrist": ("wrist.jpg", wrist_image, "image/jpeg"),
         }
         reply = self._send(
             "POST",
@@ -231,6 +246,14 @@ class SessionClient:
             self.logged_keys = True
             print(f"[vla] first predict reply keys: {sorted(reply) if isinstance(reply, dict) else type(reply)}")
         return parse_chunk(reply)
+
+    def begin_episode(self) -> None:
+        """Start another shot on this open session: reset the policy's state, keep the clock going."""
+        self.time_offset = self.last_timestamp + 1.0
+        try:
+            self._send("POST", ["/sessions/{s}/reset", "/v1/inference/sessions/{s}/reset"], timeout=10.0)
+        except InferenceError as exc:
+            print(f"[vla] reset not accepted ({exc.status}); continuing on the same session")
 
     def close(self) -> None:
         try:
@@ -263,6 +286,71 @@ class _Flight:
     done: threading.Event = field(default_factory=threading.Event)
 
 
+# The session grant can take 10-20 s while the service assigns capacity, so sessions are
+# opened ahead of filming (warm_session) and reused across shots and jobs until near expiry.
+_WARM: dict[tuple[str, str], SessionClient] = {}
+_WARM_LOCK = threading.Lock()  # guards the two dicts; each key's own lock covers its slow open
+_KEY_LOCKS: dict[tuple[str, str], threading.Lock] = {}
+# 30 min, not the 6 h maximum: sessions orphaned by a killed server stayed assigned for hours,
+# and the deployment went into deployment_recovering after a night of restarts.
+SESSION_TTL_S = 1800
+SESSION_REUSE_S = SESSION_TTL_S - 300
+GRANT_RETRIES = 20
+GRANT_RETRY_S = 10.0
+
+
+def warm_session(instruction: str) -> SessionClient:
+    """An open session for this instruction, reused if it is still young."""
+    deployment_id = os.getenv("DEPLOYMENT_ID", "").strip()
+    if not deployment_id:
+        raise RuntimeError("DEPLOYMENT_ID is empty. Run: python -m ml.upload_and_train deployments")
+    key = (deployment_id, instruction)
+    with _WARM_LOCK:
+        key_lock = _KEY_LOCKS.setdefault(key, threading.Lock())
+    with key_lock:
+        session = _WARM.get(key)
+        if session is None or time.monotonic() - session.opened_at > SESSION_REUSE_S:
+            for attempt in range(GRANT_RETRIES):
+                session = SessionClient(deployment_id, instruction)
+                try:
+                    session.open()
+                    break
+                except ApiError as exc:
+                    # 409 deployment_recovering: the service is restarting the assignment.
+                    if "409" not in str(exc) or attempt == GRANT_RETRIES - 1:
+                        raise
+                    print(f"[vla] deployment recovering, retrying the grant in {GRANT_RETRY_S:.0f} s")
+                    time.sleep(GRANT_RETRY_S)
+            with _WARM_LOCK:
+                _WARM[key] = session
+        return session
+
+
+def release_session(instruction: str) -> None:
+    """Close and forget the warm session for one instruction, if any."""
+    deployment_id = os.getenv("DEPLOYMENT_ID", "").strip()
+    with _WARM_LOCK:
+        session = _WARM.pop((deployment_id, instruction), None)
+    if session is not None:
+        session.close()
+
+
+def close_warm_sessions() -> None:
+    """Delete every warm session; call on shutdown so restarts do not pile up open sessions."""
+    with _WARM_LOCK:
+        sessions = list(_WARM.values())
+        _WARM.clear()
+    for session in sessions:
+        session.close()
+
+
+def _forget(session: SessionClient) -> None:
+    with _WARM_LOCK:
+        for key, value in list(_WARM.items()):
+            if value is session:
+                del _WARM[key]
+
+
 def run_task(
     instruction: str,
     duration_s: float,
@@ -275,13 +363,18 @@ def run_task(
     clock=time.monotonic,
     sleep=time.sleep,
 ) -> None:
-    """Blocking. Runs the policy for duration_s on one instruction, then deletes the session."""
-    if session is None:
-        deployment_id = os.getenv("DEPLOYMENT_ID", "").strip()
-        if not deployment_id:
-            raise RuntimeError("DEPLOYMENT_ID is empty. Run: python -m ml.upload_and_train deployments")
-        session = SessionClient(deployment_id, instruction)
-    session.open()
+    """Blocking. Runs the policy for duration_s on one instruction.
+
+    Without `session` it uses the warm session for the instruction and leaves it open for the
+    next shot; a session passed in is opened here and deleted at the end.
+    """
+    owned = session is not None
+    if owned:
+        session.open()
+    else:
+        session = warm_session(instruction)
+        if session.sequence:
+            session.begin_episode()
     player = Player(session.profile)
     fps = player.fps
     t0 = clock()
@@ -292,8 +385,9 @@ def run_task(
         try:
             f.chunk = session.predict(
                 state=state,
-                side_png=side.png_bytes(),
-                wrist_png=wrist.png_bytes(),
+                # JPEG, not PNG: two PNGs took replies past the 400 ms deadline on venue Wi-Fi.
+                side_image=side.jpeg_bytes(JPEG_QUALITY),
+                wrist_image=wrist.jpeg_bytes(JPEG_QUALITY),
                 tick=f.request_tick,
                 rtc=rtc,
             )
@@ -311,6 +405,7 @@ def run_task(
                     err = flight.error
                     failures += 1
                     if (isinstance(err, InferenceError) and err.status == 401) or failures >= MAX_CONSECUTIVE_FAILURES:
+                        _forget(session)  # expired or broken: the next shot opens a fresh one
                         raise err
                     print(f"[vla] predict failed, holding: {err}")
                 elif player.accept(flight.chunk, flight.request_tick, flight.arrival_tick):
@@ -336,7 +431,8 @@ def run_task(
             arm.hold()
         except Exception:
             pass
-        session.close()
+        if owned:
+            session.close()
 
 
 def main() -> None:

@@ -14,6 +14,7 @@ Run from the repo root:
 import asyncio
 import logging
 import sys
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -80,9 +81,16 @@ async def lifespan(app: FastAPI):
     app.state.perception = perception
     app.state.gate = JobGate()
     app.state.messages = message_log()
+    if USE_VLA and not USE_MOCK_ARM:
+        # Open the policy sessions now, one at a time, so the first job does not wait on grants.
+        threading.Thread(target=_warm_all, daemon=True).start()
     try:
         yield
     finally:
+        if USE_VLA:
+            from robot.vla_client import close_warm_sessions
+
+            close_warm_sessions()
         try:
             wrist.stop_recording()
         except Exception:
@@ -93,6 +101,19 @@ async def lifespan(app: FastAPI):
             pass
         wrist.close()
         side.close()
+
+
+def _warm_all() -> None:
+    from robot.vla_client import warm_session
+    from shared.constants import SHOTS
+
+    for task, spec in SHOTS.items():
+        if spec.get("enabled") and spec.get("vla_prompt") and spec.get("engine", "vla") == "vla":
+            try:
+                warm_session(spec["vla_prompt"])
+                print(f"[vla] {task} session ready")
+            except Exception as exc:
+                log.warning("startup grant for %s failed: %s", task, exc)
 
 
 app = FastAPI(title="Cinematic recorder", lifespan=lifespan)
@@ -126,7 +147,10 @@ async def transcribe(file: UploadFile = File(...)) -> dict:
             file.filename or "",
         )
     except RuntimeError as exc:
-        log.warning("transcribe failed: %s", exc)
+        log.warning(
+            "transcribe failed: %s (type %r, name %r, %d bytes, starts %r)",
+            exc, file.content_type, file.filename, len(data), data[:16],
+        )
         status = 400 if str(exc) in {"empty recording", "recording is too long"} else 502
         raise HTTPException(status_code=status, detail=str(exc)) from exc
     return TranscribeResult(text=text).model_dump()

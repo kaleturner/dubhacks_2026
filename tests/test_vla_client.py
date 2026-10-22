@@ -171,33 +171,34 @@ def opened(http):
 def test_open_uses_tokens_not_team_key_and_walkthrough_paths():
     http = FakeHttp()
     s = opened(http)
-    method, url, headers, kw = http.calls[0]
+    assert http.calls[0][1] == "https://ep.example/deployments/dep1/contract"  # contract_id, with session tokens
+    method, url, headers, kw = next(c for c in http.calls if c[1].endswith("/sessions"))
     assert url == "https://ep.example/deployments/dep1/sessions"
     assert headers["Authorization"] == "Bearer APP" and headers["Modal-Authorization"] == "Bearer MOD"
     assert kw["json"] == {"instruction": "do the thing", "contract_id": "c" * 64, "rtc_enabled": True}
-    assert s.api.calls[2][2] == {"session_id": s.session_id, "ttl_seconds": 21600}
+    assert s.api.calls[2][2] == {"session_id": s.session_id, "ttl_seconds": 1800}
 
 
 def test_falls_back_to_v1_inference_paths_and_remembers():
     http = FakeHttp(reject_walkthrough=True)
     s = opened(http)
     assert http.calls[-1][1] == "https://ep.example/v1/inference/deployments/dep1/sessions"
-    s.predict(state=[0] * 6, side_png=b"a", wrist_png=b"b", tick=0)
+    s.predict(state=[0] * 6, side_image=b"a", wrist_image=b"b", tick=0)
     assert http.calls[-1][1].endswith(f"/v1/inference/sessions/{s.session_id}/predict")
     assert sum("/v1/inference/" not in c[1] for c in http.calls) == 1  # only the first probe
 
 
-def test_predict_metadata_is_monotonic_and_png():
+def test_predict_metadata_is_monotonic_and_jpeg():
     http = FakeHttp()
     s = opened(http)
     for tick in (0, 15, 30):
-        s.predict(state=[1, 2, 3, 4, 5, 6], side_png=b"a", wrist_png=b"b", tick=tick,
+        s.predict(state=[1, 2, 3, 4, 5, 6], side_image=b"a", wrist_image=b"b", tick=tick,
                   rtc=None if tick == 0 else {"prior_chunk_id": "k1", "prior_start_index": 15, "delay": 5, "committed_actions": rows(5)})
     metas = [json.loads(c[3]["files"]["metadata"][1]) for c in http.calls if c[1].endswith("/predict")]
     assert [m["sequence"] for m in metas] == [0, 1, 2]
     assert [m["timestamp_seconds"] for m in metas] == [0.0, 0.5, 1.0]
     assert "rtc" not in metas[0] and metas[1]["rtc"]["delay"] == 5
-    assert metas[0]["image_encoding"] == "png" and metas[0]["state"] == [1, 2, 3, 4, 5, 6]
+    assert metas[0]["image_encoding"] == "jpeg" and metas[0]["state"] == [1, 2, 3, 4, 5, 6]
     files = http.calls[-1][3]["files"]
     assert set(files) == {"metadata", "side", "wrist"}
 
@@ -211,14 +212,14 @@ def test_http_error_carries_status():
     s.open()
     s.http = Bad()
     with pytest.raises(InferenceError) as err:
-        s.predict(state=[0] * 6, side_png=b"", wrist_png=b"", tick=0)
+        s.predict(state=[0] * 6, side_image=b"", wrist_image=b"", tick=0)
     assert err.value.status == 401
 
 
 # --- run_task: the whole loop on fakes ---------------------------------
 
 class FakeCam:
-    def png_bytes(self):
+    def jpeg_bytes(self, quality=90):
         return b"png"
 
 
@@ -236,7 +237,7 @@ class FakeSession:
     def open(self):
         self.opened = True
 
-    def predict(self, *, state, side_png, wrist_png, tick, rtc=None):
+    def predict(self, *, state, side_image, wrist_image, tick, rtc=None):
         self.requests.append((tick, rtc, state))
         time.sleep(self.latency_s)
         if self.fail:

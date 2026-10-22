@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 import pytest
 
-from ml.edit import MUSIC, _beat_grid, _claw_rows, _crop_window, _interesting_ranges, choose_track, cut_edit
+from ml.edit import CLAW_MAX, MUSIC, _beat_grid, _claw_rows, _crop_window, _interesting_ranges, choose_track, cut_edit
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs ffmpeg")
 
@@ -73,15 +73,18 @@ def test_claw_measurement_ignores_a_centered_pale_object():
     assert _claw_rows(frame) == 0
 
 
-def test_claw_measurement_clears_both_jaws_and_their_dark_tips():
+def test_claw_measurement_is_capped_to_keep_the_product():
+    # The painted claw reaches ~100+ rows; the crop stops at CLAW_MAX so a product
+    # sitting just above the jaws stays in the edit.
     rows = _claw_rows(paint(0, claw=True))
-    assert 100 <= rows <= int(480 * 0.32)
+    assert rows == int(480 * CLAW_MAX)
 
 
 def test_crop_window_cannot_drift_back_onto_the_claw():
-    win_w, win_h, x0, y0, dx, dy = _crop_window(640, 480, 120)
+    claw = int(480 * CLAW_MAX)
+    win_w, win_h, x0, y0, dx, dy = _crop_window(640, 480, claw)
     assert y0 - dy >= -1e-6
-    assert y0 + win_h + dy <= 480 - 120 + 1e-6
+    assert y0 + win_h + dy <= 480 - claw + 1e-6
     assert x0 - dx >= -1e-6
     assert x0 + win_w + dx <= 640 + 1e-6
     assert abs(win_w / win_h - 640 / 480) < 0.03

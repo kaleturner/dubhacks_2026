@@ -49,6 +49,7 @@ RECORD_SLACK_S = 10
 # Each shot is filmed for duration / KEEP and the middle is kept: the arm moves at about
 # the recorded speed, and the unfold from rest and the fold back are cut.
 KEEP = 0.7
+VLA_WARM_TIMEOUT_S = 240  # per session, before the arm moves; past this the shot is filmed as a replay
 POST_TIMEOUT_S = 30
 
 
@@ -112,12 +113,15 @@ class Orchestrator:
             await self._stop_hardware()
             await self.status("ERROR", str(exc).strip() or exc.__class__.__name__)
         finally:
+            # Policy sessions stay open for the next job. Grants hit deployment_recovering
+            # for minutes at a time, an open session keeps working; the server closes them on shutdown.
             self.gate.release()
 
     async def _run(self, text: str, job_id: str) -> None:
         intent = await self._parse(text)
         if intent is None:
             return
+        self._warm_first_shot(intent)
 
         if not await self._locate(job_id, intent):
             return
@@ -125,6 +129,8 @@ class Orchestrator:
         stills, still_urls = await self._scout(job_id)
         await self._plan(stills, still_urls, intent)
         trims = await self._record(job_id, intent)
+        # Policy shots end wherever the model left the arm; park it while the edit runs.
+        await self._call(SCOUT_TIMEOUT_S, "RECORD", self.arm.move_to, "home", SCOUT_MOVE_S)
         edit_url = await self._post(trims, job_id, intent.object, f"{text} {intent.style}")
 
         result = ResultMessage(
@@ -214,6 +220,7 @@ class Orchestrator:
         trims: list[asyncio.Task] = []
         if hasattr(self.arm, "center_on"):
             self.arm.center_on = intent.object  # replays steer to keep it in the wrist view
+        ready = await self._warm_policies(intent)
         try:
             for index, shot in enumerate(intent.shots):
                 spec = self.registry[shot.task]
@@ -225,11 +232,15 @@ class Orchestrator:
                     f"{_seconds(shot.duration_s)}s, wrist cam rolling",
                 )
                 await self._call(SCOUT_TIMEOUT_S, "RECORD", self.arm.move_to, spec["start_pose"], SCOUT_MOVE_S)
-                if not (self.use_vla and spec.get("vla_prompt")) and hasattr(self.arm, "prepare_shot"):
+                policy = self.use_vla and spec.get("vla_prompt") and spec.get("engine", "vla") == "vla" and hasattr(self.arm, "warm_vla")
+                if policy and spec["vla_prompt"] not in ready:
+                    policy = False
+                    await self.status("RECORD", f"Isaac unavailable, filming {shot.task} as a replay")
+                if not policy and hasattr(self.arm, "prepare_shot"):
                     # Pick the recorded take that matches where the object is, before the camera rolls.
                     await self._call(SCOUT_TIMEOUT_S, "RECORD", self.arm.prepare_shot, spec["scripted"])
                 film_s = shot.duration_s / KEEP
-                await self._film(raw_path, shot, spec, film_s)
+                await self._film(raw_path, shot, spec, film_s, bool(policy))
                 # Every clip but the last carries extra for the crossfade into the next one.
                 keep_s = shot.duration_s + (CROSSFADE_S if index < len(intent.shots) - 1 else 0.0)
                 trims.append(asyncio.create_task(self._trim(raw_path, clip_path, keep_s, film_s)))
@@ -240,13 +251,24 @@ class Orchestrator:
             raise
         return trims
 
-    async def _film(self, raw_path: Path, shot: Shot, spec: dict, film_s: float) -> None:
+    async def _film(self, raw_path: Path, shot: Shot, spec: dict, film_s: float, policy: bool = False) -> None:
         await asyncio.to_thread(self.wrist.start_recording, raw_path)
         started = time.monotonic()
         try:
             timeout = film_s + RECORD_SLACK_S
-            if self.use_vla and spec.get("vla_prompt"):
-                await self._call(timeout, "RECORD", self.arm.run_vla, spec["vla_prompt"], film_s)
+            if policy:
+                prime = (spec["scripted"], float(spec.get("prime_s", 0.0)))
+                try:
+                    await self._call(timeout, "RECORD", self.arm.run_vla, spec["vla_prompt"], film_s, *prime)
+                except TimeoutError:
+                    raise  # the policy thread may still be driving the arm; never start a replay over it
+                except Exception as exc:
+                    # A session that went stale mid-shot: drop it and finish the take as a replay.
+                    log.warning("policy failed during %s: %s", shot.task, exc)
+                    await asyncio.to_thread(self.arm.release_vla, spec["vla_prompt"])
+                    await self.status("RECORD", f"Isaac dropped out, finishing {shot.task} as a replay")
+                    left = max(1.0, film_s - (time.monotonic() - started))
+                    await self._call(left + RECORD_SLACK_S, "RECORD", self.arm.run_scripted, spec["scripted"], left)
             else:
                 await self._call(timeout, "RECORD", self.arm.run_scripted, spec["scripted"], film_s)
             remain = film_s - (time.monotonic() - started)
@@ -254,6 +276,47 @@ class Orchestrator:
                 await asyncio.sleep(remain)
         finally:
             await asyncio.to_thread(self.wrist.stop_recording)
+
+    async def _warm_policies(self, intent: Intent) -> set[str]:
+        """Open every policy shot's session, one at a time, before the arm moves.
+
+        Sessions are reused across jobs, so after the first run this returns at once.
+        Returns the prompts that have a session; the other shots are filmed as replays.
+        """
+        if not (self.use_vla and hasattr(self.arm, "warm_vla")):
+            return set()
+        prompts: list[str] = []
+        for shot in intent.shots:
+            spec = self.registry[shot.task]
+            prompt = spec.get("vla_prompt")
+            if prompt and spec.get("engine", "vla") == "vla" and prompt not in prompts:
+                prompts.append(prompt)
+        ready: set[str] = set()
+        for index, prompt in enumerate(prompts):
+            await self.status("RECORD", f"getting Isaac ready ({index + 1}/{len(prompts)})")
+            try:
+                await self._call(VLA_WARM_TIMEOUT_S, "RECORD", self.arm.warm_vla, prompt)
+                ready.add(prompt)
+            except Exception as exc:
+                log.warning("no policy session for %r: %s", prompt, exc)
+        return ready
+
+    def _warm_first_shot(self, intent: Intent) -> None:
+        """Start the first policy shot's session grant now, so its 10-50 s wait overlaps
+        locating and scouting. Still one session: the shot waits on this same grant."""
+        if not (self.use_vla and hasattr(self.arm, "warm_vla")):
+            return
+        for shot in intent.shots:
+            spec = self.registry[shot.task]
+            if spec.get("vla_prompt") and spec.get("engine", "vla") == "vla":
+                def warm(prompt=spec["vla_prompt"]) -> None:
+                    try:
+                        self.arm.warm_vla(prompt)
+                    except Exception as exc:  # the shot opens its own session and reports
+                        log.warning("early grant for %r failed: %s", prompt, exc)
+
+                asyncio.create_task(asyncio.to_thread(warm))
+                return
 
     async def _trim(self, raw_path: Path, clip_path: Path, duration_s: float, film_s: float) -> str:
         start_s = max(0.0, (film_s - duration_s) / 2)  # the middle of the take

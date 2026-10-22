@@ -13,7 +13,7 @@ def total(shots):
 
 def test_vague_15s_query_gets_one_establishing_shot():
     # Three shots need 30 s at min_s 10, so a 15 s ad keeps only the first in story order.
-    shots = fallback_shots("make a product ad for this apple")
+    shots = fallback_shots("make a 15 second product ad for this apple")
     assert [s["task"] for s in shots] == ["sweep"]
     assert total(shots) == 15
 
@@ -35,7 +35,7 @@ def test_named_moves_keep_order_and_total():
 def test_vague_query_uses_story_order():
     shots = fallback_shots("make a product ad", registry=ALL)
     assert [s["task"] for s in shots] == ["sweep", "overhead", "zoom"]
-    assert total(shots) == 15
+    assert total(shots) == 30
 
 
 def test_normalize_drops_unknown_and_caps():
@@ -68,9 +68,12 @@ def test_normalize_respects_min_by_dropping_tail():
 
 def test_helpers():
     assert parse_total("record 12 seconds of this") == 12
-    assert parse_total("record this") == 15
+    assert parse_total("record this") == 30
+    assert parse_total("Make a thirty second hype ad for the duck.") == 30
+    assert parse_total("a twenty-second clip") == 20
     assert guess_object("record a 15 second video of this apple") == "apple"
     assert guess_object("go") == "apple"
+    assert guess_object("make a 30 second product ad for this esp32") == "esp32"
 
 
 def test_intent_validation():

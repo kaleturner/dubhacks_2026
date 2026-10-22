@@ -177,14 +177,36 @@ class Arm:
         centerer.tracker.poll()
         return centerer
 
-    def run_vla(self, instruction: str, duration_s: float) -> None:
-        """Run the fine-tuned policy on one task sentence. See robot/vla_client.py."""
+    def warm_vla(self, instruction: str) -> None:
+        """Open (or reuse) the policy session for an instruction before filming starts."""
+        from robot.vla_client import warm_session
+
+        warm_session(instruction)
+
+    def run_vla(self, instruction: str, duration_s: float, prime: str | None = None, prime_s: float = 0.0) -> None:
+        """Run the fine-tuned policy on one task sentence. See robot/vla_client.py.
+
+        With `prime`, the first prime_s seconds replay that task's demo first. From the
+        shared start pose the 1k-step policy did an overhead for every instruction; from a
+        state only its own task reaches (sweep with the wrist already rolled, zoom tilted
+        low) it carried on with the right move.
+        """
         if self.side is None or self.wrist is None:
             raise RuntimeError("Arm needs the side and wrist cameras for the VLA: Arm(side, wrist)")
         from robot.vla_client import run_task
 
         self._stop.clear()
+        if prime and prime_s > 0:
+            rows = np.array(load_replay(prime)["actions"], dtype=float)[: int(round(prime_s * self.hz))]
+            self._play(rows)
+            duration_s = max(1.0, duration_s - prime_s)
         run_task(instruction, duration_s, arm=self, side=self.side, wrist=self.wrist, stop=self._stop)
+
+    def release_vla(self, instruction: str) -> None:
+        """Close the policy session for an instruction (the deployment caps open sessions)."""
+        from robot.vla_client import release_session
+
+        release_session(instruction)
 
     def stop(self) -> None:
         """Stop any move in progress and hold where it is. Torque stays on so the arm cannot drop."""
@@ -263,9 +285,12 @@ class MockArm(Arm):
         print(f"[MockArm] run_scripted {move!r} for {duration_s}s")
         time.sleep(min(duration_s, 0.25))
 
-    def run_vla(self, instruction: str, duration_s: float) -> None:
-        print(f"[MockArm] run_vla {instruction!r} for {duration_s}s")
+    def run_vla(self, instruction: str, duration_s: float, prime: str | None = None, prime_s: float = 0.0) -> None:
+        print(f"[MockArm] run_vla {instruction!r} for {duration_s}s (prime {prime} {prime_s}s)")
         time.sleep(min(duration_s, 0.25))
+
+    def release_vla(self, instruction: str) -> None:
+        print(f"[MockArm] release_vla {instruction!r}")
 
     def send_joints(self, joints: list[float]) -> list[float]:
         out = clamp_joints([float(v) for v in joints])
